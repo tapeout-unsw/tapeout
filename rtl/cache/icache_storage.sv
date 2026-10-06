@@ -52,8 +52,31 @@ module icache_storage {
 
 always_ff @(posedge clk) begin
     if (reset) then
-        for (int i = 0; i < 8; i++) {
-            s
-        }
+        for (int i = 0; i < 8; i++) begin
+
+            sec0_memory[i] <= 32'b0;
+            sec1_memory[i] <= 32'b0;
+
+            sec0_tags[i] <= 4'b0;
+            sec1_tags[i] <= 4'b0;
+
+            sec0_valid_bits[i] <= 1'b0;
+            sec1_valid_bits[i] <= 1'b0;
         end;
     end;
+
+    else begin
+        if (sec0_write_en) begin
+            sec0_memory[index] <= sec0_write_data;
+            sec0_tags[index] <= sec0_write_tag;
+            sec0_valid_bits[index] <= 1'b1;
+        end
+
+        if (sec1_write_en) begin
+            sec1_memory[index] <= sec1_write_data;
+            sec1_tags[index] <= sec1_write_tag;
+            sec1_valid_bits[index] <= 1'b1;
+        end
+    end
+end
+endmodule
