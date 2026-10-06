@@ -28,4 +28,32 @@ module icache_storage {
     output logic sec1_valid,
 }
 
-// Cache Storage
+// Cache Storage Bits
+    logic [31:0] sec0_memory [0:7];
+    logic [31:0] sec1_memory [0:7];
+
+    logic [3:0] sec0_tags [0:7];
+    logic [3:0] sec1_tags [0:7];
+
+    logic sec0_valid_bits [0:7];
+    logic sec1_valid_bits [0:7];
+
+// Cache Read
+    assign sec0_data = sec0_memory[index];
+    assign sec1_data = sec1_memory[index];
+
+    assign sec0_tag = sec0_tags[index];
+    assign sec1_tag = sec1_tags[index];
+
+    assign sec0_valid = sec0_valid_bits[index];
+    assign sec1_valid = sec1_valid_bits[index];
+
+// Cache Writing
+
+always_ff @(posedge clk) begin
+    if (reset) then
+        for (int i = 0; i < 8; i++) {
+            s
+        }
+        end;
+    end;
