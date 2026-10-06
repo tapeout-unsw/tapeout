@@ -48,9 +48,10 @@ module icache_storage {
     assign sec0_valid = sec0_valid_bits[index];
     assign sec1_valid = sec1_valid_bits[index];
 
-// Cache Writing
 
 always_ff @(posedge clk) begin
+
+    // Cache Resetting
     if (reset) then
         for (int i = 0; i < 8; i++) begin
 
@@ -65,6 +66,7 @@ always_ff @(posedge clk) begin
         end;
     end;
 
+    // Cache Writing
     else begin
         if (sec0_write_en) begin
             sec0_memory[index] <= sec0_write_data;
