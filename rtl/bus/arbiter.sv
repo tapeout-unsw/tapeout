@@ -130,6 +130,11 @@ module arbiter (
                 b_wdata = ic1_wdata;
                 b_wstrb = ic1_wstrb;
             end
+            default: begin
+                b_addr = 13'd0;
+                b_wdata = 32'd0;
+                b_wstrb = 4'd0;
+            end
             
         endcase
 
