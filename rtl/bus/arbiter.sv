@@ -12,9 +12,9 @@ x_wstrb = 0000 is a read, anything else a write.
 When loading = 1, we are in the bootloader stage, so we grant boot automatically whenever boot_req is high
 
 When loading = 0, we use round robin to choose between sources using a 2 bit pointer.
-(0 = boot, 1 = d0, 2 = d1, 3 = ic0, 4 = ic1)
-We first check the source at the pointer to see if it is requesting, if it isn't, we increment the pointer
-to check the next source, and so on. After a grant, the pointer increments to the next source.
+(0 = d0, 1 = d1, 2 = ic0, 3 = ic1)
+We check the source at the pointer to see if it is requesting, if it isn't, the next one is checked,
+and so on, this is done in parallel. After a grant, the pointer goes to the one after the winner.
 */
 
 module arbiter (
@@ -61,19 +61,19 @@ module arbiter (
     output logic [12:0] b_addr,     // Winner's address
     output logic [31:0] b_wdata,    // Winner's write data
     output logic [3:0]  b_wstrb,    // Winner's write strobe
-    output logic [2:0]  b_src       // Winner's pointer (0 = boot, 1 = d0, 2 = d1, 3 = ic0, 4 = ic1)
+    output logic [2:0]  b_src       // Winner's id (0 = boot, 1 = d0, 2 = d1, 3 = ic0, 4 = ic1)
 );
 
-    // 
+    logic [2:0] b_src_temp;
 
-    // Stub: outputs tied off until implemented.
-    assign d0_gnt  = 1'b0;
-    assign d1_gnt  = 1'b0;
-    assign ic0_gnt = 1'b0;
-    assign ic1_gnt = 1'b0;
-    assign b_valid = 1'b0;
-    assign b_addr  = '0;
-    assign b_wdata = '0;
-    assign b_wstrb = '0;
-    assign b_src   = '0;
+    // Each source's grant output depends on b_src
+    assign d0_gnt = (b_src == 3'd1);
+    assign d1_gnt = (b_src == 3'd2);
+    assign ic0_gnt = (b_src == 3'd3);
+    assign ic1_gnt = (b_src == 3'd4);
+
+    // If there is a boot request and we are in the loading stage, then winner must be bootloader
+    assign b_src = (boot_req || loading) ? 3'b0 : b_src_temp;
+
+    // Will add comb logic for b_src_temp
 endmodule
