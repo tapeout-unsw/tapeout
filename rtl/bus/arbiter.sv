@@ -61,47 +61,52 @@ module arbiter (
     output logic [12:0] b_addr,     // Winner's address
     output logic [31:0] b_wdata,    // Winner's write data
     output logic [3:0]  b_wstrb,    // Winner's write strobe
-    output logic [2:0]  b_src       // Winner's id (0 = boot, 1 = d0, 2 = d1, 3 = ic0, 4 = ic1)
+    output logic [2:0]  b_src       // Winner's id (0 = boot, 1 = d0, 2 = d1, 3 = ic0, 4 = ic1, 5 = nobody)
 );
 
-    logic [2:0] b_src_temp;
     logic [1:0] rr_pointer;         // Round-robin pointer (0 = d0, 1 = d1, 2 = ic0, 3 = ic1)
 
     always_comb begin
-        b_src_temp = 3'd5;          // Default to nobody won (represented as 5)
+        b_src = 3'd5;               // Default to nobody won
         b_valid = 1'b1;             // Default to somebody won
 
         // Handle choosing source based on pointer position
-        case (rr_pointer)
-            2'd0: begin
-                if (d0_req) b_src_temp = 3'd1;
-                else if (d1_req) b_src_temp = 3'd2;
-                else if (ic0_req) b_src_temp = 3'd3;
-                else if (ic1_req) b_src_temp = 3'd4;
-                else b_valid = 1'b0;
-            end
-            2'd1: begin
-                if (d1_req) b_src_temp = 3'd2;
-                else if (ic0_req) b_src_temp = 3'd3;
-                else if (ic1_req) b_src_temp = 3'd4;
-                else if (d0_req) b_src_temp = 3'd1;
-                else b_valid = 1'b0;
-            end
-            2'd2: begin
-                if (ic0_req) b_src_temp = 3'd3;
-                else if (ic1_req) b_src_temp = 3'd4;
-                else if (d0_req) b_src_temp = 3'd1;
-                else if (d1_req) b_src_temp = 3'd2;
-                else b_valid = 1'b0;
-            end
-            2'd3: begin
-                if (ic1_req) b_src_temp = 3'd4;
-                else if (d0_req) b_src_temp = 3'd1;
-                else if (d1_req) b_src_temp = 3'd2;
-                else if (ic0_req) b_src_temp = 3'd3;
-                else b_valid = 1'b0;
-            end
-        endcase
+        if (~loading) begin
+            case (rr_pointer)
+                2'd0: begin
+                    if (d0_req) b_src = 3'd1;
+                    else if (d1_req) b_src = 3'd2;
+                    else if (ic0_req) b_src = 3'd3;
+                    else if (ic1_req) b_src = 3'd4;
+                    else b_valid = 1'b0;
+                end
+                2'd1: begin
+                    if (d1_req) b_src = 3'd2;
+                    else if (ic0_req) b_src = 3'd3;
+                    else if (ic1_req) b_src = 3'd4;
+                    else if (d0_req) b_src = 3'd1;
+                    else b_valid = 1'b0;
+                end
+                2'd2: begin
+                    if (ic0_req) b_src = 3'd3;
+                    else if (ic1_req) b_src = 3'd4;
+                    else if (d0_req) b_src = 3'd1;
+                    else if (d1_req) b_src = 3'd2;
+                    else b_valid = 1'b0;
+                end
+                2'd3: begin
+                    if (ic1_req) b_src = 3'd4;
+                    else if (d0_req) b_src = 3'd1;
+                    else if (d1_req) b_src = 3'd2;
+                    else if (ic0_req) b_src = 3'd3;
+                    else b_valid = 1'b0;
+                end
+            endcase
+        // If we are in the loading stage, winner must be the bootloader
+        end else begin
+            b_valid = boot_req;
+            if (boot_req) b_src = 3'd0;
+        end
 
         // Handle choosing b_addr, b_wdata and b_wstrb based on current b_src
         case (b_src)
@@ -135,7 +140,6 @@ module arbiter (
                 b_wdata = 32'd0;
                 b_wstrb = 4'd0;
             end
-            
         endcase
 
         // Each source's grant output depends on b_src
@@ -143,17 +147,16 @@ module arbiter (
         d1_gnt = (b_src == 3'd2);
         ic0_gnt = (b_src == 3'd3);
         ic1_gnt = (b_src == 3'd4);
-
-        // If there is a boot request or we are in the loading stage, then winner must be bootloader
-        b_src = (boot_req || loading) ? 3'b0 : b_src_temp;
     end
 
     always_ff @ (posedge clk) begin
         if (rst) begin
             rr_pointer <= 2'b0;
         end else begin
-            // Increment rr_pointer based on previous winner
-            if (b_valid) rr_pointer <= rr_pointer + 2'd1;
+            // Increment rr_pointer based on winner
+            if (b_valid && ~loading) begin
+                rr_pointer <= b_src[1:0];
+            end
         end
     end
 endmodule
