@@ -120,7 +120,7 @@ module arbiter (
             rr_pointer <= 2'b0;
         end else begin
             // Increment rr_pointer based on previous winner
-            if 
+            if (b_valid) rr_pointer <= rr_pointer + 2'd1;
         end
     end
 endmodule
