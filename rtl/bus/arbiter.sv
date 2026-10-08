@@ -11,7 +11,7 @@ x_wstrb = 0000 is a read, anything else a write.
 
 When loading = 1, we are in the bootloader stage, so we grant boot automatically whenever boot_req is high
 
-When loading = 0, we use round robin to choose between sources using a 2 bit pointer.
+When loading = 0, we use round-robin to choose between sources using a 2 bit pointer.
 (0 = d0, 1 = d1, 2 = ic0, 3 = ic1)
 We check the source at the pointer to see if it is requesting, if it isn't, the next one is checked,
 and so on, this is done in parallel. After a grant, the pointer goes to the one after the winner.
@@ -65,15 +65,35 @@ module arbiter (
 );
 
     logic [2:0] b_src_temp;
+    logic [1:0] rr_pointer;         // Round-robin pointer (0 = d0, 1 = d1, 2 = ic0, 3 = ic1)
 
-    // Each source's grant output depends on b_src
-    assign d0_gnt = (b_src == 3'd1);
-    assign d1_gnt = (b_src == 3'd2);
-    assign ic0_gnt = (b_src == 3'd3);
-    assign ic1_gnt = (b_src == 3'd4);
+    always_comb begin
+        b_src_temp = 3'd5;          // Default to nobody won (represented as 5)
+        case (rr_pointer)
+            2'd0: begin
+                if (d0_req) b_src_temp = 3'd1;
+                else if (d1_req) b_src_temp = 3'd2;
+                else if (ic0_req) b_src_temp = 3'd3;
+                else if (ic1_req) b_src_temp = 3'd4;
+            end
+        endcase
 
-    // If there is a boot request and we are in the loading stage, then winner must be bootloader
-    assign b_src = (boot_req || loading) ? 3'b0 : b_src_temp;
+        // Each source's grant output depends on b_src
+        d0_gnt = (b_src == 3'd1);
+        d1_gnt = (b_src == 3'd2);
+        ic0_gnt = (b_src == 3'd3);
+        ic1_gnt = (b_src == 3'd4);
 
-    // Will add comb logic for b_src_temp
+        // If there is a boot request or we are in the loading stage, then winner must be bootloader
+        b_src = (boot_req || loading) ? 3'b0 : b_src_temp;
+    end
+
+    always_ff @ (posedge clk) begin
+        if (rst) begin
+            rr_pointer <= 2'b0;
+        end else begin
+            // Increment rr_pointer based on previous winner
+            if 
+        end
+    end
 endmodule
