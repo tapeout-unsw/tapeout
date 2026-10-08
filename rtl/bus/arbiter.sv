@@ -103,7 +103,35 @@ module arbiter (
             end
         endcase
 
-
+        // Handle choosing b_addr, b_wdata and b_wstrb based on current b_src
+        case (b_src)
+            3'd0: begin
+                b_addr = boot_addr;
+                b_wdata = boot_wdata;
+                b_wstrb = boot_wstrb;
+            end
+            3'd1: begin
+                b_addr = d0_addr;
+                b_wdata = d0_wdata;
+                b_wstrb = d0_wstrb;
+            end
+            3'd2: begin
+                b_addr = d1_addr;
+                b_wdata = d1_wdata;
+                b_wstrb = d1_wstrb;
+            end
+            3'd3: begin
+                b_addr = ic0_addr;
+                b_wdata = ic0_wdata;
+                b_wstrb = ic0_wstrb;
+            end
+            3'd4: begin
+                b_addr = ic1_addr;
+                b_wdata = ic1_wdata;
+                b_wstrb = ic1_wstrb;
+            end
+            
+        endcase
 
         // Each source's grant output depends on b_src
         d0_gnt = (b_src == 3'd1);
