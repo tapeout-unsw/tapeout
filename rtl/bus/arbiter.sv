@@ -69,14 +69,41 @@ module arbiter (
 
     always_comb begin
         b_src_temp = 3'd5;          // Default to nobody won (represented as 5)
+        b_valid = 1'b1;             // Default to somebody won
+
+        // Handle choosing source based on pointer position
         case (rr_pointer)
             2'd0: begin
                 if (d0_req) b_src_temp = 3'd1;
                 else if (d1_req) b_src_temp = 3'd2;
                 else if (ic0_req) b_src_temp = 3'd3;
                 else if (ic1_req) b_src_temp = 3'd4;
+                else b_valid = 1'b0;
+            end
+            2'd1: begin
+                if (d1_req) b_src_temp = 3'd2;
+                else if (ic0_req) b_src_temp = 3'd3;
+                else if (ic1_req) b_src_temp = 3'd4;
+                else if (d0_req) b_src_temp = 3'd1;
+                else b_valid = 1'b0;
+            end
+            2'd2: begin
+                if (ic0_req) b_src_temp = 3'd3;
+                else if (ic1_req) b_src_temp = 3'd4;
+                else if (d0_req) b_src_temp = 3'd1;
+                else if (d1_req) b_src_temp = 3'd2;
+                else b_valid = 1'b0;
+            end
+            2'd3: begin
+                if (ic1_req) b_src_temp = 3'd4;
+                else if (d0_req) b_src_temp = 3'd1;
+                else if (d1_req) b_src_temp = 3'd2;
+                else if (ic0_req) b_src_temp = 3'd3;
+                else b_valid = 1'b0;
             end
         endcase
+
+
 
         // Each source's grant output depends on b_src
         d0_gnt = (b_src == 3'd1);
