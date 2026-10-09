@@ -62,3 +62,12 @@ jobs:
 
       - name: Unit testbenches with real checks (UNIT_GATED)
         run: nix develop .#ci --command make test-unit-gated
+
+      - name: cocotb block tests (COCOTB_GATED)
+        run: |
+          nix develop .#ci --command bash -c '
+            set -e
+            python3 -m venv .venv
+            source .venv/bin/activate
+            python -m pip install -q -r sim/requirements.txt
+            make test-cocotb-gated'
