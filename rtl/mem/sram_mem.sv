@@ -36,7 +36,7 @@ module sram_mem #(
                 .addr (addr),
                 .wdata(wdata[8*i +: 8]),
                 .rdata(rdata[8*i +: 8])
-            )
+            );
         end
     endgenerate
 endmodule

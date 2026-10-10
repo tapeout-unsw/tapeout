@@ -25,7 +25,7 @@ done
 command -v verilator >/dev/null || { echo "Verilator 5+ is required; run nix develop first." >&2; exit 2; }
 command -v timeout >/dev/null || { echo "GNU timeout is required." >&2; exit 2; }
 
-CORE_SRC=("$ROOT"/rtl/core/*.sv "$ROOT/rtl/mem/mem_access.sv")
+CORE_SRC=("$ROOT"/rtl/core/*.sv)
 case "$TOP" in
     core_mc_tb) SRC=("${CORE_SRC[@]}") ;;
     soc_tb)     SRC=("${CORE_SRC[@]}" "$ROOT/rtl/soc.sv" "$ROOT/rtl/bootloader.sv"
