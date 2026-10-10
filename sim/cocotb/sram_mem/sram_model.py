@@ -7,8 +7,9 @@ against its specification rather than against itself.
 Timing convention used by every test:
   * inputs change on the FALLING edge of clk,
   * the SRAM samples them on the next RISING edge,
-  * outputs are read in the ReadOnly phase straight after that rising edge,
-    when every register and combinational path has settled.
+  * rdata is read at the following FALLING edge, half a cycle later. The
+    macro's Q settles a short delay after the clock edge (as real silicon
+    does), and the bus only needs the data before the next rising edge.
 """
 
 from __future__ import annotations
@@ -71,14 +72,19 @@ def run_cocotb(*, words: int, macro: bool, test_module: str) -> None:
     macro  False: sram_macro's behavioural memory
            True:  the OCD macro models in ip/gf180mcu_ocd_ip_sram/
 
+    Simulator: Verilator for the behavioural lanes, Icarus for the macro
+    models. Verilator cannot build the OCD models under cocotb: cocotb always
+    passes --public-flat-rw, and with it Verilator emits C++ that references
+    the models' specparams (Tdly, Tcyc, ...) without declaring them.
+
     Environment variables:
-      SIM=verilator|icarus  simulator (default verilator)
+      SIM=verilator|icarus  force one simulator for both models
       WAVES=1               dump waveforms into the build directory
       SEED=<n>              reproduce a random run
     """
     from cocotb_tools.runner import get_runner
 
-    sim = os.environ.get("SIM", "verilator")
+    sim = os.environ.get("SIM") or ("icarus" if macro else "verilator")
     waves = os.environ.get("WAVES", "0") == "1"
 
     sources = [ROOT / "rtl/mem/sram_macro.sv", ROOT / "rtl/mem/sram_mem.sv"]
@@ -94,7 +100,7 @@ def run_cocotb(*, words: int, macro: bool, test_module: str) -> None:
             build_args += ["--timing", "-Wno-SPECIFYIGN"]
 
     model = "macro" if macro else "behav"
-    build_dir = ROOT / "sim" / "obj_dir" / f"cocotb_sram_mem_w{words}_{model}"
+    build_dir = ROOT / "sim" / "obj_dir" / f"cocotb_sram_mem_w{words}_{model}_{sim}"
     runner = get_runner(sim)
     runner.build(sources=sources, hdl_toplevel="sram_mem",
                  parameters={"WORDS": words}, defines=defines,

@@ -58,21 +58,25 @@ class SramPort:
             getattr(self.dut, name).value = 0
         start_clock(self.dut.clk)
         await ClockCycles(self.dut.clk, idle_cycles)
+        await FallingEdge(self.dut.clk)              # cycle() starts at a falling edge
         await self.cycle(en=1, addr=0)               # dummy read: CEN falls...
         for _ in range(idle_cycles):                 # ...and rises again
             await self.cycle()
 
     async def cycle(self, en: int = 0, addr: int = 0, wdata: int = 0, wstrb: int = 0) -> int | None:
-        """One cycle. Drive on the falling edge, let the SRAM sample on the
-        rising edge, then return rdata as it is right after that edge
-        (None if it holds X or Z)."""
-        await FallingEdge(self.dut.clk)
+        """One cycle, starting and ending on a falling edge.
+
+        Drive the inputs, let the SRAM sample them on the rising edge, then
+        return rdata at the next falling edge (None if it holds X or Z).
+        Reading half a cycle after the edge matters: the macro's Q settles a
+        short delay after the clock edge, as real silicon does, and the bus
+        only needs the data before the following rising edge."""
         self.dut.en.value = en
         self.dut.addr.value = addr
         self.dut.wdata.value = wdata & MASK32
         self.dut.wstrb.value = wstrb
         await RisingEdge(self.dut.clk)
-        await ReadOnly()
+        await FallingEdge(self.dut.clk)
         if en and wstrb:
             self.ref.write_word(addr, wdata, wstrb)
         value = self.dut.rdata.value
@@ -156,22 +160,22 @@ async def enable_low_blocks_writes(dut):
 
 @cocotb.test()
 async def read_latency_is_one_cycle(dut):
-    """U4: rdata becomes the new word at the rising edge that samples the
-    read, and keeps the previous value until then."""
+    """U4: rdata keeps the previous value until the rising edge that samples
+    the read, and holds the new word by the middle of the following cycle,
+    well before the next rising edge where the bus captures it."""
     port = await setup(dut)
     a0, a1 = 1 % port.words, 2 % port.words
     await port.write(a0, 0x1111_1111)
     await port.write(a1, 0x2222_2222)
     assert await port.read(a0) == 0x1111_1111
 
-    # drive the read of a1 and look at rdata BEFORE the sampling edge
-    await FallingEdge(dut.clk)
+    # we are at a falling edge: drive the read of a1 and look BEFORE the edge
     dut.en.value, dut.addr.value, dut.wstrb.value = 1, a1, 0
     await ReadOnly()
     assert as_int(dut.rdata) == 0x1111_1111, "U4: rdata changed before the clock edge"
     await RisingEdge(dut.clk)
-    await ReadOnly()
-    assert as_int(dut.rdata) == 0x2222_2222, "U4: rdata not updated at the sampling edge"
+    await FallingEdge(dut.clk)
+    assert as_int(dut.rdata) == 0x2222_2222, "U4: rdata not updated within the cycle after the edge"
 
 
 @cocotb.test()
