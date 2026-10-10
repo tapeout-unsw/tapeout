@@ -33,11 +33,24 @@ jobs:
 
   toolchain-a:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
       - uses: cachix/install-nix-action@v31
+
+      # Before the environment check, which requires cocotb. cocotb is built
+      # from source so its compiled parts link against the Nix toolchain that
+      # Verilator uses; prebuilt wheels expect a normal Linux system.
+      - name: Python test environment (cocotb)
+        env:
+          PIP_NO_BINARY: cocotb
+        run: |
+          nix develop .#ci --command bash -c '
+            set -e
+            python3 -m venv .venv
+            .venv/bin/python -m pip install --quiet --upgrade pip
+            .venv/bin/python -m pip install --quiet -r sim/requirements.txt'
 
       - name: Environment check
         run: nix develop .#ci --command make env
@@ -62,3 +75,7 @@ jobs:
 
       - name: Unit testbenches with real checks (UNIT_GATED)
         run: nix develop .#ci --command make test-unit-gated
+
+      - name: cocotb unit tests (sim/cocotb/sram_mem)
+        timeout-minutes: 20
+        run: nix develop .#ci --command make test-cocotb
