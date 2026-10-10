@@ -2,7 +2,7 @@
 # check_env.sh - verify the dev environment for the multicore RV32 project.
 #
 #   ./tools/check_env.sh          toolchain A: what `make ci` needs (everyone)
-#   ./tools/check_env.sh --full   also require the SW toolchain (RISC-V gcc, Spike, cocotb)
+#   ./tools/check_env.sh --full   also require the SW toolchain (RISC-V gcc, Spike)
 #   ./tools/check_env.sh --pd     also check toolchain B (physical implementation, PD sub-team)
 #   ./tools/check_env.sh --quiet  only print problems
 #
@@ -144,6 +144,16 @@ else
   bad "iverilog" "not found - macOS: brew install icarus-verilog; Linux: sudo apt install iverilog, or use nix develop"
 fi
 
+# make test-cocotb uses the repo's .venv if it exists, so check that Python.
+PY=python3
+[ -x .venv/bin/python ] && PY=.venv/bin/python
+if cver=$("$PY" -c 'import cocotb; print(cocotb.__version__)' 2>/dev/null); then
+  if version_ge "$cver" "$COCOTB_MIN"; then ok "cocotb" "$cver ($PY, make test-cocotb)"
+  else bad "cocotb" "$cver found, need >= $COCOTB_MIN (2.x changed the API)"; fi
+else
+  bad "cocotb" "not installed - run: python3 -m venv .venv && .venv/bin/pip install -r sim/requirements.txt"
+fi
+
 if have surfer; then
   ok "waveform viewer" "surfer"
 elif have gtkwave; then
@@ -182,12 +192,6 @@ fi
 if have spike; then ok "spike" "$(command -v spike)"
 else needed "spike" "not found - needed for the golden model"; fi
 
-if have python3 && cver=$(python3 -c 'import cocotb; print(cocotb.__version__)' 2>/dev/null); then
-  if version_ge "$cver" "$COCOTB_MIN"; then ok "cocotb" "$cver"
-  else needed "cocotb" "$cver found, need >= $COCOTB_MIN (2.x changed the API)"; fi
-else
-  needed "cocotb" "not installed - only needed once cocotb testbenches exist"
-fi
 
 # =============================================================================
 if [ "$CHECK_PD" -eq 1 ]; then
