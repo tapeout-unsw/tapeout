@@ -8,20 +8,31 @@ module icache_storage {
     // Section 0
     input logic section0_write_en,
     input logic [31:0] section0_write_data,
+    // 4 Bit Version
     input logic [3:0] section0_write_tag,
+    // 6 Bit Version
+    // input logic [5:0] section0_write_tag,
 
     // Section 1
     input logic section1_write_en,
     input logic [31:0] section1_write_data,
+    // 4 Bit
     input logic [3:0] section1_write_tag,
+    // 6 Bit
+    // input logic [5:0] section1_write_tag,
 
     // Reading
     output logic [31:0] sec0_data,
     output logic [31:0] sec1_data,
 
-    // Tags
+    // Tags (4)
     output logic [3:0] sec0_tag,
     output logic [3:0] sec1_tag,
+
+    /* Tags (6)
+    output logic [5:0] sec0_tag,
+    output logic [5:0] sec1_tag,
+    */
 
     // Valid Bit
     output logic sec0_valid,
@@ -34,6 +45,11 @@ module icache_storage {
 
     logic [3:0] sec0_tags [0:7];
     logic [3:0] sec1_tags [0:7];
+
+    /* Tags (6)
+    logic [5:0] sec0_tags [0:7];
+    logic [5:0] sec1_tags [0:7];
+    */
 
     logic sec0_valid_bits [0:7];
     logic sec1_valid_bits [0:7];
