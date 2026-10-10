@@ -1,4 +1,4 @@
-module icache_storage {
+module icache_storage (
     input logic clk,
     input logic reset,
 
@@ -36,8 +36,8 @@ module icache_storage {
 
     // Valid Bit
     output logic sec0_valid,
-    output logic sec1_valid,
-}
+    output logic sec1_valid
+);
 
 // Cache Storage Bits
     logic [31:0] sec0_memory [0:7];
@@ -68,7 +68,7 @@ module icache_storage {
 always_ff @(posedge clk) begin
 
     // Cache Resetting
-    if (reset) then
+    if (reset) begin
         for (int i = 0; i < 8; i++) begin
 
             sec0_memory[i] <= 32'b0;
@@ -79,8 +79,8 @@ always_ff @(posedge clk) begin
 
             sec0_valid_bits[i] <= 1'b0;
             sec1_valid_bits[i] <= 1'b0;
-        end;
-    end;
+        end
+    end
 
     // Cache Writing
     else begin
