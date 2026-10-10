@@ -26,7 +26,7 @@ Run with `make test-cocotb BLOCK=icache`. Options, as environment variables:
 import os
 import random
 import sys
-from collections import namedtuple
+from collections import Counter, namedtuple
 from pathlib import Path
 
 import cocotb
@@ -47,6 +47,21 @@ LOAD_CYCLES = 20    # length of a simulated bootloader reload
 TAG_BITS = os.environ.get("TAG_BITS", "spec")
 
 Cycle = namedtuple("Cycle", "i_valid i_rdata ic_req ic_gnt ic_addr")
+
+
+def sample(signal, name, required=True):
+    """Value of an output as an int. An X or Z is an error when `required` (a
+    flip-flop that was never reset shows up this way under Icarus, which models
+    X; Verilator only has 0 and 1); otherwise it reads as None."""
+    value = signal.value
+    if not value.is_resolvable:
+        assert not required, f"{name} is {value}: not 0 or 1 (a register that was never reset?)"
+        return None
+    return int(value)
+
+
+def hexs(value):
+    return "X" if value is None else f"{value:#010x}"
 
 
 def addr_of(index, tag):
@@ -81,21 +96,34 @@ class Bench:
         self.rdata_next = None  # word on bus_rdata next cycle, after a grant
         self.waiting = False    # last cycle had ic_req without ic_gnt
         self.last_ic_addr = 0
+        self.fill_next = False  # the next cycle is FILL (a grant, and no flush or rst)
         self.fetches = self.hits = 0
+        self.cov = Counter()    # coverage: see fetch() and step()
 
-    async def start(self):
-        cocotb.start_soon(Clock(self.dut.clk, CLK_NS, unit="ns").start())
-        await self.reset()
+    async def start(self, i_req=0, i_addr=0):
+        d = self.dut
+        # Drive every input before the first clock edge, so nothing is X.
+        d.rst.value, d.flush.value, d.i_req.value, d.i_addr.value = 1, 0, i_req, i_addr
+        d.ic_gnt.value, d.bus_rdata.value = 0, 0
+        cocotb.start_soon(Clock(d.clk, CLK_NS, unit="ns").start())
+        return await self.reset(i_req=i_req, i_addr=i_addr)
 
-    async def reset(self):
-        for _ in range(3):
-            await self.step(rst=1)
+    async def reset(self, cycles=3, i_req=0, i_addr=0):
+        """rst for `cycles` cycles, with i_req held as given (the core holds it
+        high while in reset). Returns the cycles."""
+        out = [await self.step(i_req=i_req, i_addr=i_addr, rst=1) for _ in range(cycles)]
         self.model.flush()
+        return out
 
     async def step(self, i_req=0, i_addr=0, flush=0, rst=0):
         """Run one clock cycle with these inputs; return the outputs in it."""
         dut = self.dut
         await FallingEdge(dut.clk)
+        in_fill, self.fill_next = self.fill_next, False
+        if in_fill and flush:
+            self.cov["flush_in_fill"] += 1
+        if in_fill and rst:
+            self.cov["rst_in_fill"] += 1
         dut.rst.value = rst
         dut.flush.value = flush
         dut.i_req.value = i_req
@@ -109,21 +137,24 @@ class Bench:
         self.rdata_next = None
         await Timer(1, "ns")
 
-        ic_req = bool(dut.ic_req.value)
+        # While rst is high the outputs may still be unknown (the first cycles
+        # of a run); afterwards they must all be 0 or 1.
+        ic_req = bool(sample(dut.ic_req, "ic_req", required=not rst))
         gnt = ic_req and not rst and not self.loading and self.wait_left == 0
         dut.ic_gnt.value = gnt
         await Timer(1, "ns")
+        i_valid = bool(sample(dut.i_valid, "i_valid", required=not rst))
         c = Cycle(
-            i_valid=bool(dut.i_valid.value),
-            i_rdata=int(dut.i_rdata.value),
+            i_valid=i_valid,
+            i_rdata=sample(dut.i_rdata, "i_rdata", required=False),  # checked when i_valid
             ic_req=ic_req,
             ic_gnt=gnt,
-            ic_addr=int(dut.ic_addr.value),
+            ic_addr=sample(dut.ic_addr, "ic_addr", required=ic_req and not rst) or 0,
         )
 
         if not rst:
-            assert int(dut.ic_wstrb.value) == 0, "ic_wstrb must be 0000: the cache only reads"
-            assert int(dut.ic_wdata.value) == 0, "ic_wdata must be 0"
+            assert sample(dut.ic_wstrb, "ic_wstrb") == 0, "ic_wstrb must be 0000: the cache only reads"
+            assert sample(dut.ic_wdata, "ic_wdata") == 0, "ic_wdata must be 0"
             if c.ic_req and i_req:
                 assert c.ic_addr == i_addr & 0x1FFC, (
                     f"ic_addr={c.ic_addr:#06x}, want {{i_addr[12:2], 2'b00}} = {i_addr & 0x1FFC:#06x}")
@@ -136,6 +167,7 @@ class Bench:
         self.last_ic_addr = c.ic_addr
         if gnt:
             self.rdata_next = self.mem[(c.ic_addr >> 2) % self.words]
+            self.fill_next = not flush and not rst
         if c.ic_req and not gnt and not self.loading:
             self.wait_left -= 1
         elif not c.ic_req or gnt:
@@ -145,6 +177,12 @@ class Bench:
     async def fetch(self, addr):
         """Hold i_req high at addr until i_valid, as the core does, and check
         the word and the timing. Returns True if the fetch was a hit."""
+        index, tag = self.model.split(addr)
+        ways = self.model.sets[index]
+        if tag in ways:     # coverage, per set: hits on the newest or oldest line, misses
+            self.cov[index, "hit_newest" if ways[0] == tag else "hit_oldest"] += 1
+        else:
+            self.cov[index, "evict" if len(ways) == WAYS else "miss_cold"] += 1
         hit = self.model.access(addr)
         grant_at = []
         for waited in range(FETCH_TIMEOUT):
@@ -158,7 +196,7 @@ class Bench:
 
         want = self.mem[(addr >> 2) % self.words]
         assert c.i_rdata == want, (
-            f"fetch {addr:#06x} ({'hit' if hit else 'miss'}): i_rdata={c.i_rdata:#010x}, want {want:#010x}")
+            f"fetch {addr:#06x} ({'hit' if hit else 'miss'}): i_rdata={hexs(c.i_rdata)}, want {want:#010x}")
         assert not c.ic_req, f"fetch {addr:#06x}: ic_req high in the cycle i_valid answers"
         if hit:
             assert waited == 0, (
@@ -330,6 +368,286 @@ async def random_fetch_stream(dut):
         if rng.random() < 0.02:
             await tb.flush()
     dut._log.info(f"{tb.fetches} fetches, {tb.hits} hits ({100 * tb.hits / tb.fetches:.0f}%)")
+
+
+
+# Edge cases. These drive the cache one cycle at a time (tb.step) to put it in
+# the exact state named in each docstring: rst or flush in each state, bus
+# extremes, and the cases where LRU state could go wrong.
+
+async def run_to_grant(tb, addr):
+    """Hold i_req at addr until the cycle with ic_gnt; the next cycle is FILL."""
+    for _ in range(FETCH_TIMEOUT):
+        if (await tb.step(i_req=1, i_addr=addr)).ic_gnt:
+            return
+    assert False, f"no ic_gnt for {addr:#06x} within {FETCH_TIMEOUT} cycles"
+
+
+async def assert_quiet(tb, cycles=3, why=""):
+    """With i_req low the cache must be idle: no bus request, no i_valid."""
+    for _ in range(cycles):
+        c = await tb.step()
+        assert not c.ic_req and not c.i_valid, f"cache was not idle {why}"
+
+
+@cocotb.test()
+async def i_req_held_during_reset(dut):
+    """The core holds i_req high while it is in reset. The cache must not ask
+    the bus while rst is high, and must not keep a line from a fetch that was
+    cut off: when rst is released the miss starts cleanly."""
+    tb = await new_bench(dut)
+    old, a = 0x0C0, 0x0A4
+    await tb.fetch(old)
+    await tb.step(i_req=1, i_addr=a, rst=1)   # first rst cycle: may still show the old state
+    for _ in range(5):
+        c = await tb.step(i_req=1, i_addr=a, rst=1)
+        assert not c.ic_req, "ic_req while rst is high"
+    tb.model.flush()
+    assert not await tb.fetch(a), "a line appeared during reset"
+    assert not await tb.fetch(old), "a line cached before the reset survived it"
+
+
+@cocotb.test()
+async def i_req_held_from_power_up(dut):
+    """The same from the very first cycle of the run: i_req is high before the
+    cache has ever been reset. No bus request while rst is high, and the
+    cache starts empty."""
+    tb = Bench(dut)
+    a = 0x0A4
+    cycles = await tb.start(i_req=1, i_addr=a)
+    assert not any(c.ic_req for c in cycles[1:]), "ic_req while rst is high"
+    assert not await tb.fetch(a)
+    assert await tb.fetch(a)
+
+
+@cocotb.test()
+async def rst_in_the_middle_of_a_miss_and_in_fill(dut):
+    """rst while waiting for the grant (1 and 3 cycles long), in the grant
+    cycle, and in the FILL cycle: afterwards the cache is idle and empty, and
+    the line that was being fetched is not kept."""
+    tb = await new_bench(dut)
+    old, a = addr_of(1, 1), addr_of(4, 2)
+    for where in ("waiting", "grant cycle", "fill"):
+        for rst_cycles in (1, 3):
+            await tb.fetch(old)
+            if where == "waiting":
+                tb.loading = True
+                for _ in range(4):
+                    await tb.step(i_req=1, i_addr=a)
+            elif where == "grant cycle":
+                tb.max_wait, tb.wait_left = 0, 0
+                await tb.step(i_req=1, i_addr=a)
+            else:
+                await run_to_grant(tb, a)
+            await tb.reset(cycles=rst_cycles, i_req=1, i_addr=a)
+            tb.loading = False
+            tb.max_wait = 3
+            await assert_quiet(tb, why=f"after rst in {where}")
+            assert not await tb.fetch(a), f"the line from the miss was kept after rst in {where}"
+            assert not await tb.fetch(old), f"a cached line survived rst in {where}"
+            await tb.reset()
+
+
+@cocotb.test()
+async def flush_in_the_same_cycle_as_a_hit(dut):
+    """flush while the cache is answering a hit: the line is gone afterwards,
+    and so is every other line. Tried on both lines of a set."""
+    tb = await new_bench(dut)
+    x, y = addr_of(2, 1), addr_of(2, 2)
+    for hit in (x, y):
+        await tb.fetch(x)
+        await tb.fetch(y)
+        await tb.step(i_req=1, i_addr=hit, flush=1)
+        tb.model.flush()
+        await assert_quiet(tb, why="after flush on a hit")
+        assert not await tb.fetch(hit), "the line hit during flush survived it"
+        assert not await tb.fetch(y if hit == x else x), "the other line survived flush"
+
+
+@cocotb.test()
+async def flush_in_each_cycle_of_a_miss(dut):
+    """flush while waiting for the grant (after 0 to 4 cycles) and in the grant
+    cycle itself (FILL is covered by flush_beats_fill_in_same_cycle). Either
+    way the cache is idle afterwards, nothing is kept, and the next fetch
+    returns the right word, whether i_req stays high or is dropped first."""
+    tb = await new_bench(dut)
+    old, a = addr_of(1, 1), addr_of(5, 2)
+    cases = [("waiting", n) for n in range(5)] + [("grant", 0)]
+    for kind, n in cases:
+        for hold in (True, False):
+            await tb.fetch(old)
+            await tb.step(i_req=1, i_addr=a)                 # IDLE: the miss is seen
+            if kind == "waiting":
+                tb.loading = True
+                for _ in range(n):
+                    await tb.step(i_req=1, i_addr=a)
+                c = await tb.step(i_req=1, i_addr=a, flush=1)
+                assert c.ic_req and not c.ic_gnt
+                tb.loading = False
+            else:
+                tb.max_wait, tb.wait_left = 0, 0
+                c = await tb.step(i_req=1, i_addr=a, flush=1)
+                assert c.ic_req and c.ic_gnt, "this case needs flush in the grant cycle"
+                tb.max_wait = 3
+            tb.model.flush()
+            if not hold:
+                await assert_quiet(tb, why=f"after flush ({kind}, {n})")
+            assert not await tb.fetch(a), f"the line was kept after flush ({kind}, {n})"
+            assert not await tb.fetch(old), f"a cached line survived flush ({kind}, {n})"
+            await tb.flush()
+
+
+@cocotb.test()
+async def miss_straight_after_a_fill_replaces_the_other_way(dut):
+    """The cycle after a fill, a miss in the same set: the fill made its way
+    the most recent, so the other way is the victim and the line just filled
+    stays. Tried with each of the two old lines as the one left to evict."""
+    tb = await new_bench(dut)
+    x, y, a, b = (addr_of(3, t) for t in (1, 2, 3, 4))
+    for used, other in ((x, y), (y, x)):
+        await tb.flush()
+        await tb.fetch(x)
+        await tb.fetch(y)
+        await tb.fetch(used)                    # `other` is now the victim
+        assert not await tb.fetch(a)            # a replaces `other`
+        assert not await tb.fetch(b)            # the very next fetch: b replaces `used`, not a
+        assert await tb.fetch(a), "the line filled just before was replaced"
+        assert await tb.fetch(b)
+        assert not await tb.fetch(used)
+        assert not await tb.fetch(other)
+
+
+@cocotb.test()
+async def refilling_after_a_flush_fills_both_ways_first(dut):
+    """Flush clears the valid bits; the LRU bits may keep any value. Whatever
+    they were, refilling a set fills both ways before anything is evicted:
+    two new lines are both cached, in every set tried and after every kind
+    of history, including a flush in FILL."""
+    tb = await new_bench(dut)
+    for index in (0, 3, 7):
+        x, y, a, b, c = (addr_of(index, t) for t in (1, 2, 3, 4, 5))
+        for history in ("x", "xy", "yx", "xyx", "xyy", "xyxy", "xyyy", "fill"):
+            await tb.flush()
+            if history == "fill":
+                await tb.fetch(x)
+                await run_to_grant(tb, y)
+                await tb.step(i_req=1, i_addr=y, flush=1)       # flush in FILL
+                tb.model.flush()
+            else:
+                await tb.fetch(x)
+                if len(history) > 1:
+                    await tb.fetch(y)
+                for h in history[1:]:
+                    await tb.fetch(x if h == "x" else y)
+            await tb.flush()
+            got = [await tb.fetch(t) for t in (a, b, a, b)]
+            assert got == [False, False, True, True], \
+                f"set {index}, history {history!r}: a way was evicted while the set still had room: {got}"
+            assert not await tb.fetch(c) and await tb.fetch(b), \
+                f"set {index}, history {history!r}: wrong victim after the refill"
+
+
+async def stream(tb, count):
+    """Program-like fetches over a small working set: runs, loops, jumps."""
+    rng = tb.rng
+    done = 0
+    while done < count:
+        start, length = rng.randrange(tb.span // 4) * 4, rng.randint(1, 10)
+        for _ in range(rng.randint(1, 3)):
+            for i in range(length):
+                await tb.fetch((start + 4 * i) % tb.span)
+                done += 1
+
+
+@cocotb.test()
+async def bus_that_always_grants_at_once(dut):
+    """max_wait = 0: ic_gnt comes in the first cycle of ic_req. A miss then
+    takes exactly three cycles (IDLE, MISS with the grant, FILL), and a long
+    random stream still matches the model."""
+    tb = await new_bench(dut)
+    tb.max_wait = 0
+    for t in (1, 2, 3):
+        a = addr_of(2, t)
+        c0 = await tb.step(i_req=1, i_addr=a)
+        c1 = await tb.step(i_req=1, i_addr=a)
+        c2 = await tb.step(i_req=1, i_addr=a)
+        assert not c0.i_valid and not c0.ic_req
+        assert c1.ic_req and c1.ic_gnt and not c1.i_valid
+        assert c2.i_valid and not c2.ic_req
+        tb.model.access(a)
+    await stream(tb, int(os.environ.get("FETCHES", "4000")) // 4)
+
+
+@cocotb.test()
+async def bus_with_long_stalls(dut):
+    """Stalls of 20 and 30 cycles with the request held (the Bench checks that
+    ic_req and ic_addr stay put), then a stream with random stalls up to 20."""
+    tb = await new_bench(dut)
+    for stall, t in ((20, 1), (30, 2)):
+        a = addr_of(6, t)
+        await tb.step(i_req=1, i_addr=a)
+        tb.loading = True
+        for _ in range(stall):
+            c = await tb.step(i_req=1, i_addr=a)
+            assert c.ic_req and not c.i_valid
+        tb.loading = False
+        assert not await tb.fetch(a)
+        assert await tb.fetch(a)
+    tb.max_wait = 20
+    await stream(tb, int(os.environ.get("FETCHES", "4000")) // 8)
+
+
+@cocotb.test()
+async def valid_bits_are_known_and_clear_after_reset(dut):
+    """After reset no line is valid: with i_req high, no address in any set
+    hits. Under Icarus (SIM=icarus) a valid bit that reset never touches
+    shows up as X on i_valid and fails here; with RANDOM_INIT=1 Verilator
+    starts it at a random value and a random hit shows up the same way.
+    With neither, this only checks the clean case."""
+    tb = await new_bench(dut)
+    tb.loading = True           # no grants: a probe never fills anything
+    for index in range(SETS):
+        for tag in range(1 << tb.tag_bits):
+            c = await tb.step(i_req=1, i_addr=addr_of(index, tag))
+            assert not c.i_valid, f"set {index}, tag {tag}: a line is valid after reset"
+            await tb.reset(cycles=1)    # back to IDLE for the next probe
+    tb.loading = False
+
+
+@cocotb.test()
+async def coverage_report(dut):
+    """Run a workload and report what it covered: for every set, a cold miss,
+    a miss that evicts, a hit on the newest line and a hit on the oldest line
+    of the set, plus a flush and an rst landing in a FILL cycle. The test
+    fails if any of these never happened.
+
+    Which physical way holds a line cannot be seen from the ports. The
+    newest/oldest split stands in for it: the newest line is in the way that
+    was filled or hit last, so across a run both ways take both roles."""
+    tb = await new_bench(dut)
+    for index in range(SETS):                         # one directed pass per set
+        x, y, z = (addr_of(index, t) for t in (1, 2, 3))
+        for a in (x, y, y, x, z):                     # cold, cold, newest, oldest, evict
+            await tb.fetch(a)
+    b = addr_of(0, 4)
+    await run_to_grant(tb, b)
+    await tb.step(i_req=1, i_addr=b, flush=1)         # flush in FILL
+    tb.model.flush()
+    await run_to_grant(tb, b)
+    await tb.reset(cycles=1, i_req=1, i_addr=b)       # rst in FILL
+    await stream(tb, int(os.environ.get("FETCHES", "4000")) // 4)
+
+    kinds = ("miss_cold", "evict", "hit_newest", "hit_oldest")
+    rows = [f"set  " + "  ".join(f"{k:>10}" for k in kinds)]
+    missing = []
+    for index in range(SETS):
+        counts = [tb.cov[index, k] for k in kinds]
+        rows.append(f"{index:>3}  " + "  ".join(f"{n:>10}" for n in counts))
+        missing += [f"set {index} {k}" for k, n in zip(kinds, counts) if n == 0]
+    rows.append(f"flush in FILL: {tb.cov['flush_in_fill']}, rst in FILL: {tb.cov['rst_in_fill']}")
+    dut._log.info("coverage\n" + "\n".join(rows))
+    missing += [k for k in ("flush_in_fill", "rst_in_fill") if tb.cov[k] == 0]
+    assert not missing, f"never covered: {', '.join(missing)}"
 
 
 TRACE = os.environ.get("TRACE")
