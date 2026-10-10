@@ -10,6 +10,7 @@
 // address and the FSM moves to FILL on the same clock edge. bus_rdata is then
 // ready during the FILL cycle.
 //
+// TEST
 module icache_FSM (
     input  logic clk,
     input  logic rst,

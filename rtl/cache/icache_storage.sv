@@ -1,3 +1,5 @@
+// NOTE BY RYAN: "Fix" by checking if the bits make sense
+
 module icache_storage (
     input logic clk,
     input logic reset,

@@ -34,6 +34,7 @@
 // the bootloader is loading a program. It has priority over a fill in the
 // same cycle, so no line written during a reload survives it.
 //
+// My Poor LRU Policy needs to be written
 
 module icache #(
     parameter int RAW = 10
