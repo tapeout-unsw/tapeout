@@ -29,7 +29,7 @@ CORE_SRC=("$ROOT"/rtl/core/*.sv "$ROOT/rtl/mem/mem_access.sv")
 case "$TOP" in
     core_mc_tb) SRC=("${CORE_SRC[@]}") ;;
     soc_tb)     SRC=("${CORE_SRC[@]}" "$ROOT/rtl/soc.sv" "$ROOT/rtl/bootloader.sv"
-                     "$ROOT/rtl/mem/sram_mem.sv" "$ROOT"/rtl/periph/uart_*.sv) ;;
+                     "$ROOT/rtl/mem/sram_macro.sv" "$ROOT/rtl/mem/sram_mem.sv" "$ROOT"/rtl/periph/uart_*.sv) ;;
 esac
 
 # Keep compiled simulators and requested waveforms; capture output temporarily
