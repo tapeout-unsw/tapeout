@@ -35,11 +35,50 @@ module mmio (
     output logic        dbg_lock,
     output logic [1:0]  dbg_exit
 );
-    // Stub: outputs tied off until implemented.
-    assign m_rdata  = '0;
-    assign tx_start = 1'b0;
-    assign tx_data  = '0;
-    assign done     = 1'b0;
-    assign dbg_lock = 1'b0;
-    assign dbg_exit = '0;
+    logic       wr, rd;
+    assign wr = m_en &  m_we;
+    assign rd = m_en & ~m_we;
+
+    logic       lock;
+    logic [1:0] exit_q;
+
+    always_ff @(posedge clk) begin
+        if (rst || !core_run) begin
+            lock   <= 1'b0;
+            exit_q <= 2'b00;
+        end else begin
+            if (rd && m_addr == 3'd2) lock <= 1'b1;     // LOCK read: test and set
+            if (wr && m_addr == 3'd2) lock <= 1'b0;     // LOCK write: release
+            if (wr && m_addr == 3'd4) exit_q[m_core] <= 1'b1;
+        end
+    end
+
+    // Read value of the addressed register, before this cycle's update, so a
+    // LOCK read returns the old value.
+    logic [1:0] rd_val;
+    always_comb begin
+        case (m_addr)
+            3'd1:    rd_val = {1'b0, tx_busy};
+            3'd2:    rd_val = {1'b0, lock};
+            3'd3:    rd_val = {1'b0, m_core};
+            3'd4:    rd_val = exit_q;
+            3'd5:    rd_val = {1'b0, lock};
+            default: rd_val = 2'b00;
+        endcase
+    end
+
+    // Only bits 1:0 of any register are ever non-zero.
+    logic [1:0] rd_q;
+    always_ff @(posedge clk) begin
+        if (rst) rd_q <= 2'b00;
+        else     rd_q <= rd ? rd_val : 2'b00;
+    end
+    assign m_rdata  = {30'd0, rd_q};
+
+    assign tx_start = wr && (m_addr == 3'd0);
+    assign tx_data  = m_wdata;
+
+    assign done     = &exit_q;
+    assign dbg_lock = lock;
+    assign dbg_exit = exit_q;
 endmodule

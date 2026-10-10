@@ -21,7 +21,7 @@ SYNTH_TIMEOUT ?= 120s
 # written yet" until its owner writes them; add the block here at that point
 # and `make ci` (and CI) will require it to pass.
 # Blocks: arbiter addr_decode icache sram_mem mmio
-UNIT_GATED :=
+UNIT_GATED := arbiter mmio
 
 .PHONY: help env lint synth synth-full check-top test test-core test-soc test-all \
         test-unit test-unit-gated waves ci clean
