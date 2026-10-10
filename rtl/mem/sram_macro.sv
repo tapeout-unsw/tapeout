@@ -33,7 +33,61 @@ module sram_macro #(
     output logic [7:0]    rdata                // valid the cycle after a read
 );
 
-    // Stub: output tied off until implemented.
-    assign rdata = '0;
+`ifdef USE_SRAM_MACRO
+    // Every macro control is active low.
+    logic cen_n, gwen_n;
+    assign cen_n  = ~en;                       // chip enable
+    assign gwen_n = ~we;                       // global write enable: 0 = write
+
+    // Three separate if blocks rather than an else-if chain, so every tool
+    // names the instance <lane>.g_<WORDS>.u_sram.
+    generate
+        if (WORDS == 256) begin : g_256
+            gf180mcu_ocd_ip_sram__sram256x8m8wm1 u_sram (
+                .CLK (clk),
+                .CEN (cen_n),
+                .GWEN(gwen_n),
+                .WEN (8'h00),                  // per-bit mask: write all 8 bits
+                .A   (addr),
+                .D   (wdata),
+                .Q   (rdata)
+            );
+        end
+
+        if (WORDS == 512) begin : g_512
+            gf180mcu_ocd_ip_sram__sram512x8m8wm1 u_sram (
+                .CLK (clk),
+                .CEN (cen_n),
+                .GWEN(gwen_n),
+                .WEN (8'h00),
+                .A   (addr),
+                .D   (wdata),
+                .Q   (rdata)
+            );
+        end
+
+        if (WORDS == 1024) begin : g_1024
+            gf180mcu_ocd_ip_sram__sram1024x8m8wm1 u_sram (
+                .CLK (clk),
+                .CEN (cen_n),
+                .GWEN(gwen_n),
+                .WEN (8'h00),
+                .A   (addr),
+                .D   (wdata),
+                .Q   (rdata)
+            );
+        end
+        // Any other WORDS leaves rdata undriven, which lint reports.
+    endgenerate
+`else
+    logic [7:0] mem [0:WORDS-1];               // no initial block: starts undefined
+
+    always_ff @(posedge clk) begin
+        if (en) begin
+            if (we) mem[addr] <= wdata;        // a write leaves rdata unchanged,
+            else    rdata     <= mem[addr];    // exactly like the macro
+        end
+    end
+`endif
 
 endmodule
