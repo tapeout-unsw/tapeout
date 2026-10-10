@@ -6,20 +6,20 @@ module icache_storage {
     input logic[2:0] index,
 
     // Section 0
-    input logic section0_write_en,
-    input logic [31:0] section0_write_data,
+    input logic sec0_write_en,
+    input logic [31:0] sec0_write_data,
     // 4 Bit Version
-    input logic [3:0] section0_write_tag,
+    input logic [3:0] sec0_write_tag,
     // 6 Bit Version
-    // input logic [5:0] section0_write_tag,
+    // input logic [5:0] sec0_write_tag,
 
     // Section 1
-    input logic section1_write_en,
-    input logic [31:0] section1_write_data,
+    input logic sec1_write_en,
+    input logic [31:0] sec1_write_data,
     // 4 Bit
-    input logic [3:0] section1_write_tag,
+    input logic [3:0] sec1_write_tag,
     // 6 Bit
-    // input logic [5:0] section1_write_tag,
+    // input logic [5:0] sec1_write_tag,
 
     // Reading
     output logic [31:0] sec0_data,
