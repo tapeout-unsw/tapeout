@@ -55,11 +55,87 @@ module icache #(
     input  logic        ic_gnt,
     input  logic [31:0] bus_rdata
 );
-    // Stub: outputs tied off until implemented.
-    assign i_valid  = 1'b0;
-    assign i_rdata  = '0;
-    assign ic_req   = 1'b0;
-    assign ic_addr  = '0;
-    assign ic_wdata = '0;
-    assign ic_wstrb = '0;
+    localparam int TAGW = RAW - 5;
+
+    // ---------------- Address split ----------------
+    logic [2:0]      index;
+    logic [TAGW-1:0] tag;
+    assign index = i_addr[4:2];
+    assign tag   = i_addr[RAW-1:5];
+
+    // ---------------- Storage ----------------
+    logic [31:0]     sec0_data,  sec1_data;
+    logic [TAGW-1:0] sec0_tag,   sec1_tag;
+    logic            sec0_valid, sec1_valid;
+    logic            sec0_write_en, sec1_write_en;
+
+    icache_storage u_storage (
+        .clk             (clk),
+        .reset           (rst),
+        .index           (index),
+
+        .sec0_write_en   (sec0_write_en),
+        .sec0_write_data (bus_rdata),
+        .sec0_write_tag  (tag),
+
+        .sec1_write_en   (sec1_write_en),
+        .sec1_write_data (bus_rdata),
+        .sec1_write_tag  (tag),
+
+        .sec0_data       (sec0_data),
+        .sec1_data       (sec1_data),
+        .sec0_tag        (sec0_tag),
+        .sec1_tag        (sec1_tag),
+        .sec0_valid      (sec0_valid),
+        .sec1_valid      (sec1_valid)
+    );
+
+    // ---------------- Hit detection ----------------
+    logic hit0, hit1, cache_hit, hit_way;
+    assign hit0      = sec0_valid && (sec0_tag == tag);
+    assign hit1      = sec1_valid && (sec1_tag == tag);
+    assign cache_hit = hit0 || hit1;
+    assign hit_way   = hit1;
+
+    // ---------------- FSM ----------------
+    logic serve_hit, miss_start, fill;
+
+    icache_FSM u_fsm (
+        .clk        (clk),
+        .rst        (rst),
+        .flush      (flush),
+        .i_req      (i_req),
+        .cache_hit  (cache_hit),
+        .ic_gnt     (ic_gnt),
+        .serve_hit  (serve_hit),
+        .miss_start (miss_start),   // not used yet
+        .ic_req     (ic_req),
+        .fill       (fill)
+    );
+
+    // ---------------- LRU ----------------
+    logic victim_way;
+
+    icache_lru u_lru (
+        .clk        (clk),
+        .rst        (rst),
+        .index      (index),
+        .access     (serve_hit || fill),
+        .access_way (fill ? victim_way : hit_way),
+        .victim_way (victim_way)
+    );
+
+    // ---------------- Fill ----------------
+    assign sec0_write_en = fill && (victim_way == 1'b0);
+    assign sec1_write_en = fill && (victim_way == 1'b1);
+
+    // ---------------- Core side ----------------
+    assign i_valid = serve_hit || fill;
+    assign i_rdata = fill ? bus_rdata
+                   : (hit1 ? sec1_data : sec0_data);
+
+    // ---------------- Bus side ----------------
+    assign ic_addr  = {i_addr[12:2], 2'b00};
+    assign ic_wdata = 32'b0;
+    assign ic_wstrb = 4'b0000;
 endmodule
