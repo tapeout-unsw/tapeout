@@ -28,7 +28,8 @@
 //   MISS  ic_req = 1. On ic_gnt go to FILL.
 //   FILL  write {1, tag, bus_rdata} into the victim way, i_valid = 1,
 //         i_rdata = bus_rdata. Go to IDLE.
-//   Any hit or fill to way w sets that set's LRU bit to the other way.
+//   A fill to way w sets that set's LRU bit to the other way. Hits leave it
+//   unchanged, so the victim is the way filled longest ago.
 //
 // flush returns the FSM to IDLE and clears a saved miss. The storage valid
 // bits are currently cleared by rst only.
@@ -148,7 +149,7 @@ module icache #(
         .clk        (clk),
         .rst        (rst),
         .index      (storage_index),
-        .access     (serve_hit || fill),
+        .access     (fill),             // hits don't update the LRU bit
         .access_way (fill ? miss_victim : hit_way),
         .victim_way (victim_way)
     );

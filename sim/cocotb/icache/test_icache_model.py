@@ -18,10 +18,11 @@ def test_four_bit_tag():
     assert m.split(0x200) == (0, 0)
 
 
-def test_lru():
+def test_replacement_follows_fill_order():
     m = ICacheModel(tag_bits=5)
     a, b, c = 0x020, 0x040, 0x060  # same set, three tags
-    assert [m.access(x) for x in (a, b, a, c, a, b)] == [False, False, True, False, True, False]
+    # The hit on a doesn't count: c replaces a, the older fill.
+    assert [m.access(x) for x in (a, b, a, c, a, b)] == [False, False, True, False, False, False]
 
 
 def test_flush():

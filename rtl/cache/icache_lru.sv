@@ -2,9 +2,9 @@
 //
 // LRU for the 2-way instruction cache. One bit per set.
 //
-// lru[set] names the victim way (the least recently used one).
-// On a hit or fill to way w, lru[set] becomes ~w, so the other way
-// is evicted next.
+// lru[set] names the victim way. On an access to way w (icache.sv
+// passes fills only; hits don't count), lru[set] becomes ~w, so the
+// other way is evicted next.
 //
 module icache_lru (
     input  logic       clk,

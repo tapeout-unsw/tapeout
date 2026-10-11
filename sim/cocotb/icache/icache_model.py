@@ -4,7 +4,8 @@ hits, which is all the core can observe besides the data.
 
   2-way set associative, 8 sets, one 32-bit word per line
   index = addr[4:2], tag = addr[tag_bits+4:5]
-  LRU replacement: a hit or fill makes that line the most recently used
+  replacement: a miss in a full set replaces the way filled longest ago;
+  hits don't change it
   flush and reset invalidate every line
 
 The spec gives tag_bits = RAW-5 (6 bits for the 2 KiB RAM); test_icache.py
@@ -34,13 +35,12 @@ class ICacheModel:
         """Fetch addr: update the replacement state and return True on a hit."""
         index, tag = self.split(addr)
         ways = self.sets[index]
-        hit = tag in ways
-        if hit:
-            ways.remove(tag)
+        if tag in ways:
+            return True
         ways.insert(0, tag)
         del ways[WAYS:]
-        return hit
+        return False
 
     def flush(self):
-        # Each set lists its valid tags, most recently used first.
+        # Each set lists its valid tags, most recently filled first.
         self.sets = [[] for _ in range(SETS)]
