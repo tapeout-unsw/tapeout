@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 declare -A RTL=(
     [arbiter]="rtl/bus/arbiter.sv"
     [addr_decode]="rtl/bus/addr_decode.sv"
-    [icache]="rtl/cache/icache.sv"
+    [icache]="rtl/cache/icache.sv rtl/cache/icache_FSM.sv rtl/cache/icache_storage.sv rtl/cache/icache_lru.sv"
     [sram_mem]="rtl/mem/sram_mem.sv"
     [mmio]="rtl/periph/mmio.sv"
 )

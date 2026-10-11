@@ -30,11 +30,8 @@
 //         i_rdata = bus_rdata. Go to IDLE.
 //   Any hit or fill to way w sets that set's LRU bit to the other way.
 //
-// flush clears every valid bit and returns the FSM to IDLE. It is high while
-// the bootloader is loading a program. It has priority over a fill in the
-// same cycle, so no line written during a reload survives it.
-//
-// My Poor LRU Policy needs to be written
+// flush returns the FSM to IDLE and clears a saved miss. The storage valid
+// bits are currently cleared by rst only.
 
 module icache #(
     parameter int RAW = 10
@@ -63,6 +60,16 @@ module icache #(
     assign index = i_addr[4:2];
     assign tag   = i_addr[RAW-1:5];
 
+    // Save the whole miss transaction. The core address can move while the
+    // arbiter and one-cycle SRAM read are completing the request.
+    logic [12:0]     miss_addr;
+    logic [2:0]      miss_index;
+    logic [TAGW-1:0] miss_tag;
+    logic            miss_victim;
+    logic            miss_pending;
+    logic [2:0]      storage_index;
+    assign storage_index = miss_pending ? miss_index : index;
+
     // ---------------- Storage ----------------
     logic [31:0]     sec0_data,  sec1_data;
     logic [TAGW-1:0] sec0_tag,   sec1_tag;
@@ -72,15 +79,15 @@ module icache #(
     icache_storage u_storage (
         .clk             (clk),
         .reset           (rst),
-        .index           (index),
+        .index           (storage_index),
 
         .sec0_write_en   (sec0_write_en),
         .sec0_write_data (bus_rdata),
-        .sec0_write_tag  (tag),
+        .sec0_write_tag  (miss_tag),
 
         .sec1_write_en   (sec1_write_en),
         .sec1_write_data (bus_rdata),
-        .sec1_write_tag  (tag),
+        .sec1_write_tag  (miss_tag),
 
         .sec0_data       (sec0_data),
         .sec1_data       (sec1_data),
@@ -108,10 +115,31 @@ module icache #(
         .cache_hit  (cache_hit),
         .ic_gnt     (ic_gnt),
         .serve_hit  (serve_hit),
-        .miss_start (miss_start),   // not used yet
+        .miss_start (miss_start),
         .ic_req     (ic_req),
         .fill       (fill)
     );
+
+    // ---------------- Saved miss ----------------
+    always_ff @(posedge clk) begin
+        if (rst || flush) begin
+            miss_addr    <= 13'b0;
+            miss_index   <= 3'b0;
+            miss_tag     <= '0;
+            miss_victim  <= 1'b0;
+            miss_pending <= 1'b0;
+        end else begin
+            if (miss_start) begin
+                miss_addr    <= {i_addr[12:2], 2'b00};
+                miss_index   <= index;
+                miss_tag     <= tag;
+                miss_victim  <= victim_way;
+                miss_pending <= 1'b1;
+            end
+            if (fill)
+                miss_pending <= 1'b0;
+        end
+    end
 
     // ---------------- LRU ----------------
     logic victim_way;
@@ -119,15 +147,15 @@ module icache #(
     icache_lru u_lru (
         .clk        (clk),
         .rst        (rst),
-        .index      (index),
+        .index      (storage_index),
         .access     (serve_hit || fill),
-        .access_way (fill ? victim_way : hit_way),
+        .access_way (fill ? miss_victim : hit_way),
         .victim_way (victim_way)
     );
 
     // ---------------- Fill ----------------
-    assign sec0_write_en = fill && (victim_way == 1'b0);
-    assign sec1_write_en = fill && (victim_way == 1'b1);
+    assign sec0_write_en = fill && (miss_victim == 1'b0);
+    assign sec1_write_en = fill && (miss_victim == 1'b1);
 
     // ---------------- Core side ----------------
     assign i_valid = serve_hit || fill;
@@ -135,7 +163,8 @@ module icache #(
                    : (hit1 ? sec1_data : sec0_data);
 
     // ---------------- Bus side ----------------
-    assign ic_addr  = {i_addr[12:2], 2'b00};
+    // Hold the accepted miss address until the SRAM response comes back.
+    assign ic_addr  = miss_pending ? miss_addr : {i_addr[12:2], 2'b00};
     assign ic_wdata = 32'b0;
     assign ic_wstrb = 4'b0000;
 endmodule

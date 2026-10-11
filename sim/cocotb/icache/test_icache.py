@@ -352,5 +352,11 @@ def test_icache(raw):
     (RAW=10 and 11, as check_top.sh does) and run the cocotb tests above."""
     if TRACE:
         os.environ["TRACE"] = str(Path(TRACE).resolve())
-    run("icache", ["rtl/cache/icache.sv"], "icache", "test_icache",
+    sources = [
+        "rtl/cache/icache.sv",
+        "rtl/cache/icache_FSM.sv",
+        "rtl/cache/icache_storage.sv",
+        "rtl/cache/icache_lru.sv",
+    ]
+    run("icache", sources, "icache", "test_icache",
         parameters={"RAW": raw}, tag=f"_raw{raw}")
