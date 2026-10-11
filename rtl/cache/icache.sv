@@ -68,6 +68,7 @@ module icache #(
     logic [TAGW-1:0] miss_tag;
     logic            miss_victim;
     logic            miss_pending;
+    logic            victim_way;    // from icache_lru, declared before its first use
     logic [2:0]      storage_index;
     assign storage_index = miss_pending ? miss_index : index;
 
@@ -143,7 +144,6 @@ module icache #(
     end
 
     // ---------------- LRU ----------------
-    logic victim_way;
 
     icache_lru u_lru (
         .clk        (clk),
