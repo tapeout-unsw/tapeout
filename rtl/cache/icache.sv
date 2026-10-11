@@ -31,8 +31,9 @@
 //   A fill to way w sets that set's LRU bit to the other way. Hits leave it
 //   unchanged, so the victim is the way filled longest ago.
 //
-// flush returns the FSM to IDLE and clears a saved miss. The storage valid
-// bits are currently cleared by rst only.
+// flush returns the FSM to IDLE, clears a saved miss and clears every valid
+// bit (it drives the storage reset together with rst). It is high while the
+// bootloader loads a program, so no line from the old program survives.
 
 module icache #(
     parameter int RAW = 10
@@ -80,7 +81,7 @@ module icache #(
 
     icache_storage u_storage (
         .clk             (clk),
-        .reset           (rst),
+        .reset           (rst | flush),      // flush clears every line
         .index           (storage_index),
 
         .sec0_write_en   (sec0_write_en),
