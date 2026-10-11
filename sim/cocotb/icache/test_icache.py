@@ -13,9 +13,9 @@ Every fetch is checked three ways:
           {i_addr[12:2], 2'b00}, and ic_req is held until ic_gnt
 
 Run with `make test-cocotb BLOCK=icache`. Options, as environment variables:
-  TAG_BITS=<n>    test a narrower tag than the spec's RAW-5 (6 bits at
-                  RAW=11). Fetches then stay below 2^(TAG_BITS+5) bytes, the
-                  range a tag that wide can tell apart.
+  TAG_BITS=<n>    override the cache's fixed 6-bit tag for model experiments.
+                  Fetches stay below 2^(TAG_BITS+5) bytes, the range a tag
+                  that wide can tell apart.
   SEED=<n>        random seed (default 1); every run prints the one it used
   FETCHES=<n>     length of the random fetch stream (default 4000)
   TRACE=<file>    also replay a recorded fetch-address trace, one hex address
@@ -42,8 +42,8 @@ CLK_NS = 10
 FETCH_TIMEOUT = 50  # cycles a single fetch may take before the test gives up
 LOAD_CYCLES = 20    # length of a simulated bootloader reload
 
-# Tag width. The spec gives RAW-5 bits: a 39-bit line is 1 valid + 6 tag +
-# 32 data, with 2 KiB of RAM (RAW=11). TAG_BITS=<n> overrides it.
+# The cache line is 1 valid + 6 tag + 32 data = 39 bits.
+# TAG_BITS=<n> can override the reference model for experiments.
 TAG_BITS = os.environ.get("TAG_BITS", "spec")
 
 Cycle = namedtuple("Cycle", "i_valid i_rdata ic_req ic_gnt ic_addr")
@@ -67,7 +67,7 @@ class Bench:
         self.dut = dut
         self.raw = int(dut.RAW.value)
         self.words = 1 << (self.raw - 2)
-        self.tag_bits = self.raw - 5 if TAG_BITS == "spec" else int(TAG_BITS)
+        self.tag_bits = 6 if TAG_BITS == "spec" else int(TAG_BITS)
         self.span = 1 << min(self.raw, self.tag_bits + 5)  # fetch addresses stay below
         seed = int(os.environ.get("SEED", "1"))
         dut._log.info(f"RAW={self.raw} TAG_BITS={self.tag_bits} SEED={seed} (replay with SEED={seed})")

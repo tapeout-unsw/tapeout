@@ -10,31 +10,22 @@ module icache_storage (
     // Section 0
     input logic sec0_write_en,
     input logic [31:0] sec0_write_data,
-    // 4 Bit Version
-    input logic [3:0] sec0_write_tag,
-    // 6 Bit Version
-    // input logic [5:0] sec0_write_tag,
+    // 6-bit tag
+    input logic [5:0] sec0_write_tag,
 
     // Section 1
     input logic sec1_write_en,
     input logic [31:0] sec1_write_data,
-    // 4 Bit
-    input logic [3:0] sec1_write_tag,
-    // 6 Bit
-    // input logic [5:0] sec1_write_tag,
+    // 6-bit tag
+    input logic [5:0] sec1_write_tag,
 
     // Reading
     output logic [31:0] sec0_data,
     output logic [31:0] sec1_data,
 
-    // Tags (4)
-    output logic [3:0] sec0_tag,
-    output logic [3:0] sec1_tag,
-
-    /* Tags (6)
+    // Tags
     output logic [5:0] sec0_tag,
     output logic [5:0] sec1_tag,
-    */
 
     // Valid Bit
     output logic sec0_valid,
@@ -45,13 +36,8 @@ module icache_storage (
     logic [31:0] sec0_memory [0:7];
     logic [31:0] sec1_memory [0:7];
 
-    logic [3:0] sec0_tags [0:7];
-    logic [3:0] sec1_tags [0:7];
-
-    /* Tags (6)
     logic [5:0] sec0_tags [0:7];
     logic [5:0] sec1_tags [0:7];
-    */
 
     logic sec0_valid_bits [0:7];
     logic sec1_valid_bits [0:7];
@@ -76,8 +62,8 @@ always_ff @(posedge clk) begin
             sec0_memory[i] <= 32'b0;
             sec1_memory[i] <= 32'b0;
 
-            sec0_tags[i] <= 4'b0;
-            sec1_tags[i] <= 4'b0;
+            sec0_tags[i] <= 6'b0;
+            sec1_tags[i] <= 6'b0;
 
             sec0_valid_bits[i] <= 1'b0;
             sec1_valid_bits[i] <= 1'b0;

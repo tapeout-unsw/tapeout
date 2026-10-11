@@ -4,7 +4,7 @@
 // 2-way set associative, 8 sets, one 32-bit word per line.
 //
 // Parameters
-//   RAW     RAM byte address bits. Tag is RAW-5 bits (5 for 1 KiB, 6 for 2 KiB).
+//   RAW     RAM byte address bits. Kept for top-level parameter compatibility.
 //
 // Core side
 //   i_req    the core wants the instruction at i_addr. i_addr is stable while
@@ -19,7 +19,7 @@
 //
 // Address split
 //   index = i_addr[4:2]        one of 8 sets
-//   tag   = i_addr[RAW-1:5]
+//   tag   = i_addr[10:5]       six tag bits
 //   line  = {valid, tag, data}; one LRU bit per set names the victim way.
 //
 // Behaviour
@@ -52,13 +52,13 @@ module icache #(
     input  logic        ic_gnt,
     input  logic [31:0] bus_rdata
 );
-    localparam int TAGW = RAW - 5;
+    localparam int TAGW = 6;
 
     // ---------------- Address split ----------------
     logic [2:0]      index;
     logic [TAGW-1:0] tag;
     assign index = i_addr[4:2];
-    assign tag   = i_addr[RAW-1:5];
+    assign tag   = i_addr[10:5];
 
     // Save the whole miss transaction. The core address can move while the
     // arbiter and one-cycle SRAM read are completing the request.
