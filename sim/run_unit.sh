@@ -8,6 +8,8 @@ declare -A RTL=(
     [addr_decode]="rtl/bus/addr_decode.sv"
     [icache]="rtl/cache/icache.sv rtl/cache/icache_FSM.sv rtl/cache/icache_storage.sv rtl/cache/icache_lru.sv"
     [sram_mem]="rtl/mem/sram_mem.sv"
+    [icache]="rtl/cache/icache.sv"
+    [sram_mem]="rtl/mem/sram_macro.sv rtl/mem/sram_mem.sv"
     [mmio]="rtl/periph/mmio.sv"
 )
 WHICH=${1:-all}
@@ -15,8 +17,10 @@ if [ "$WHICH" = all ]; then NAMES="arbiter addr_decode icache sram_mem mmio"; el
 status=0
 for n in $NAMES; do
     [ -n "${RTL[$n]:-}" ] || { echo "unknown block: $n" >&2; exit 2; }
-    OUT=$(mktemp -d)/sim
-    if ! iverilog -g2012 -s ${n}_tb -o "$OUT" "$ROOT/${RTL[$n]}" "$ROOT/tb/${n}_tb.sv"; then
+    OUT=$(mktemp -d)/sim # so two-file entrys can be passed
+    srcs=()
+    for f in ${RTL[$n]}; do srcs+=("$ROOT/$f"); done
+    if ! iverilog -g2012 -s ${n}_tb -o "$OUT" "${srcs[@]}" "$ROOT/tb/${n}_tb.sv"; then
         echo "FAIL    $n  does not compile"; status=1; continue
     fi
     r=$(timeout 60 vvp "$OUT" 2>&1 | grep -E "^(PASS|FAIL)|check failed" || true)

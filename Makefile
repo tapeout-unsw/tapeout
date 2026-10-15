@@ -17,11 +17,14 @@ BLOCK ?= all
 SYNTH_FLAGS ?= -noabc
 SYNTH_TIMEOUT ?= 120s
 
+# Python for the cocotb tests: the repo's .venv if it exists, else python3.
+PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
+
 # Unit testbenches with real checks. A block's testbench prints "no checks
 # written yet" until its owner writes them; add the block here at that point
 # and `make ci` (and CI) will require it to pass.
 # Blocks: arbiter addr_decode icache sram_mem mmio
-UNIT_GATED :=
+UNIT_GATED := arbiter mmio
 
 # cocotb block tests, one folder per block under sim/cocotb/. They need the
 # virtualenv: python -m pip install -r sim/requirements.txt. As with
@@ -32,6 +35,7 @@ COCOTB_GATED :=
 
 .PHONY: help env lint synth synth-full check-top test test-core test-soc test-all \
         test-unit test-unit-gated test-cocotb test-cocotb-gated waves ci clean
+        test-unit test-unit-gated test-cocotb waves ci clean
 
 help:
 	@echo "make env                  check the toolchain A install"
@@ -47,6 +51,7 @@ help:
 	@echo "make test-unit-gated      only the unit testbenches listed in UNIT_GATED"
 	@echo "make test-cocotb          cocotb block tests (BLOCK=all|icache; SEED=<n>, WAVES=1)"
 	@echo "make test-cocotb-gated    only the cocotb blocks listed in COCOTB_GATED"
+	@echo "make test-cocotb          cocotb unit tests (sim/cocotb/sram_mem)"
 	@echo "make waves TEST=<name>    run one core test and dump a VCD"
 	@echo "make ci                   everything CI requires"
 	@echo "make clean                remove build outputs"
@@ -125,6 +130,11 @@ test-cocotb-gated:
 	else \
 	  python -m pytest -q $(addprefix sim/cocotb/,$(COCOTB_GATED)) || exit 1; \
 	fi
+# cocotb (Python) unit tests. One-off setup from the repository root:
+#   python3 -m venv .venv && .venv/bin/pip install -r sim/requirements.txt
+# The level-2 tests in sim/cocotb/integration are parked and not run here.
+test-cocotb:
+	@$(PYTHON) -m pytest -q sim/cocotb/sram_mem
 
 waves:
 	@if [ "$(TEST)" = all ]; then echo "usage: make waves TEST=<name> [NREGS=16|32]"; exit 2; fi
@@ -132,6 +142,7 @@ waves:
 	@echo "open with: surfer sim/obj_dir/core_mc_tb_$(NREGS)/$(TEST).vcd"
 
 ci: env lint synth check-top test-all test-unit-gated test-cocotb-gated
+ci: env lint synth check-top test-all test-unit-gated test-cocotb
 
 clean:
 	rm -rf sim/obj_dir $(BUILD)
