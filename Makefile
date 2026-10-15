@@ -26,8 +26,15 @@ PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 # Blocks: arbiter addr_decode icache sram_mem mmio
 UNIT_GATED := arbiter mmio
 
+# cocotb block tests, one folder per block under sim/cocotb/. They need the
+# virtualenv: python -m pip install -r sim/requirements.txt. As with
+# UNIT_GATED, add a block here once its RTL passes its tests; `make ci` and CI
+# then require it to stay green.
+# Blocks: icache
+COCOTB_GATED :=
+
 .PHONY: help env lint synth synth-full check-top test test-core test-soc test-all \
-        test-unit test-unit-gated test-cocotb waves ci clean
+        test-unit test-unit-gated test-cocotb test-cocotb-gated waves ci clean
 
 help:
 	@echo "make env                  check the toolchain A install"
@@ -41,6 +48,8 @@ help:
 	@echo "make test-all             core and SoC tests at both register counts"
 	@echo "make test-unit            block unit testbenches (BLOCK=all|arbiter|addr_decode|icache|sram_mem|mmio)"
 	@echo "make test-unit-gated      only the unit testbenches listed in UNIT_GATED"
+	@echo "make test-cocotb          cocotb block tests (BLOCK=all|icache; SEED=<n>, WAVES=1)"
+	@echo "make test-cocotb-gated    only the cocotb blocks listed in COCOTB_GATED"
 	@echo "make test-cocotb          cocotb unit tests (sim/cocotb/sram_mem)"
 	@echo "make waves TEST=<name>    run one core test and dump a VCD"
 	@echo "make ci                   everything CI requires"
@@ -111,6 +120,15 @@ test-unit-gated:
 	  for b in $(UNIT_GATED); do ./sim/run_unit.sh $$b || exit 1; done; \
 	fi
 
+test-cocotb:
+	@python -m pytest -q sim/cocotb$(if $(filter-out all,$(BLOCK)),/$(BLOCK))
+
+test-cocotb-gated:
+	@if [ -z "$(strip $(COCOTB_GATED))" ]; then \
+	  echo "no cocotb blocks gated yet (see COCOTB_GATED in the Makefile)"; \
+	else \
+	  python -m pytest -q $(addprefix sim/cocotb/,$(COCOTB_GATED)) || exit 1; \
+	fi
 # cocotb (Python) unit tests. One-off setup from the repository root:
 #   python3 -m venv .venv && .venv/bin/pip install -r sim/requirements.txt
 # The level-2 tests in sim/cocotb/integration are parked and not run here.
@@ -122,6 +140,7 @@ waves:
 	@TRACE=1 ./sim/run_verilator.sh $(NREGS) $(TEST)
 	@echo "open with: surfer sim/obj_dir/core_mc_tb_$(NREGS)/$(TEST).vcd"
 
+ci: env lint synth check-top test-all test-unit-gated test-cocotb-gated
 ci: env lint synth check-top test-all test-unit-gated test-cocotb
 
 clean:
