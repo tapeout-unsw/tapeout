@@ -35,7 +35,6 @@ COCOTB_GATED :=
 
 .PHONY: help env lint synth synth-full check-top test test-core test-soc test-all \
         test-unit test-unit-gated test-cocotb test-cocotb-gated waves ci clean
-        test-unit test-unit-gated test-cocotb waves ci clean
 
 help:
 	@echo "make env                  check the toolchain A install"
