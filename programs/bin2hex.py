@@ -12,7 +12,7 @@ def convert(source: Path, destination: Path) -> None:
         for offset in range(0, len(data), 4):
             word = int.from_bytes(data[offset:offset + 4], "little")
             out.write(f"{word:08x}\n")
-            print(f"{source} -> {destination}")
+    print(f"{source} -> {destination}")
 
 
 def main() -> None:

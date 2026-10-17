@@ -13,10 +13,13 @@ SIM_DIR   := ../sim/obj_dir/programs
 PROGRAMS := $(patsubst %.S,%,$(notdir $(wildcard *.S)))
 BINS     := $(addprefix $(BIN_DIR)/,$(addsuffix .bin,$(PROGRAMS)))
 HEXES    := $(addprefix $(HEX_DIR)/,$(addsuffix .hex,$(PROGRAMS)))
-RTL      := $(wildcard ../rtl/core/*.sv) ../rtl/periph/mmio.sv
-TEST     ?= all
+RTL      := $(wildcard ../rtl/core/*.sv) ../rtl/periph/mmio.sv ../rtl/bus/arbiter.sv
+SIM_ARGS ?=
+NREGS    ?= 16
+SIM      := $(SIM_DIR)/$(NREGS)/simulator
+PROGRAM  ?= test
 
-.PHONY: all bins test test-one clean
+.PHONY: all bins run clean
 .SECONDARY:
 all: $(HEXES)
 bins: $(BINS)
@@ -36,26 +39,15 @@ $(BIN_DIR)/%.bin: $(BUILD_DIR)/%.elf | $(BIN_DIR)
 $(HEX_DIR)/%.hex: $(BIN_DIR)/%.bin bin2hex.py | $(HEX_DIR)
 	$(PYTHON) bin2hex.py $< $@
 
-$(SIM_DIR)/%/simulator: %_tb.sv $(RTL)
-	mkdir -p $(SIM_DIR)/$*
-	cd .. && $(VERILATOR) --binary --timing --trace -Wno-fatal \
-		--top-module $*_tb --Mdir sim/obj_dir/programs/$* \
-		-o simulator -j 2 rtl/core/*.sv rtl/periph/mmio.sv \
-		programs/$*_tb.sv
+$(SIM): program_tb.sv $(RTL) ../tools/lint_waivers.vlt
+	mkdir -p $(dir $@)
+	cd .. && $(VERILATOR) --binary --timing -Wall --top-module program_tb \
+		-GNREGS=$(NREGS) --Mdir sim/obj_dir/programs/$(NREGS) \
+		-o simulator -j 2 tools/lint_waivers.vlt $(patsubst ../%,%,$(RTL)) programs/program_tb.sv
 
-test:
-	@test -n "$(PROGRAMS)" || { echo "No .S programs found" >&2; exit 1; }
-	@if [ "$(TEST)" = all ]; then \
-		for p in $(PROGRAMS); do \
-			$(MAKE) --no-print-directory test-one TEST=$$p || exit 1; \
-		done; \
-	else \
-		$(MAKE) --no-print-directory test-one TEST="$(TEST)"; \
-	fi
-
-test-one: $(HEX_DIR)/$(TEST).hex $(SIM_DIR)/$(TEST)/simulator
-	cd .. && ./sim/obj_dir/programs/$(TEST)/simulator \
-		+HEX=programs/$(HEX_DIR)/$(TEST).hex
+run: $(HEX_DIR)/$(PROGRAM).hex $(SIM)
+	cd .. && ./sim/obj_dir/programs/$(NREGS)/simulator \
+		+HEX=programs/$(HEX_DIR)/$(PROGRAM).hex $(SIM_ARGS)
 
 clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR) $(HEX_DIR) $(SIM_DIR)

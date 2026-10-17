@@ -7,4 +7,12 @@ SECTIONS
     .text : {
         *(.text*)
     }
+    .data : {
+        *(.data*)
+        *(.rodata*)
+    }
+    .bss : {
+        *(.bss*)
+    }
+    ASSERT(. <= 0x400, "Program exceeds 1 KiB RAM")
 }
