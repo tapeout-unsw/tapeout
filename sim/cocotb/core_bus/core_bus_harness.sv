@@ -164,13 +164,37 @@ module core_bus_harness #(
     logic [2:0]     m_addr;
     logic [7:0]     m_wdata;
 
-    addr_decode #(.RAW(RAW)) u_dec (
+/*     addr_decode #(.RAW(RAW)) u_dec (
         .clk(clk),
         .b_valid(b_valid), .b_addr(b_addr), .b_wdata(b_wdata), .b_wstrb(b_wstrb), .b_src(b_src),
         .s_en(s_en), .s_addr(s_addr), .s_wdata(s_wdata), .s_wstrb(s_wstrb), .s_rdata(s_rdata),
         .m_en(m_en), .m_addr(m_addr), .m_we(m_we), .m_wdata(m_wdata), .m_core(m_core), .m_rdata(m_rdata),
         .bus_rdata(bus_rdata)
-    );
+    ); */
+
+    // Temporary simulation model of address decoding.
+    // Replace with the real addr_decode instance once implemented.
+
+    logic model_sel_q;
+
+    assign s_en    = b_valid & ~b_addr[12];
+    assign s_addr  = b_addr[RAW-1:2];
+    assign s_wdata = b_wdata;
+    assign s_wstrb = b_wstrb;
+
+    assign m_en    = b_valid & b_addr[12];
+    assign m_addr  = b_addr[4:2];
+    assign m_we    = |b_wstrb;
+    assign m_wdata = b_wdata[7:0];
+    assign m_core  = (b_src == 3'd2);
+
+    // Select the response belonging to the preceding clock's access.
+    always_ff @(posedge clk)
+        model_sel_q <= b_addr[12];
+
+    assign bus_rdata = model_sel_q ? m_rdata : s_rdata;
+
+
 
     // ---------------- SRAM: the real controller + macros ----------------
     sram_mem #(.WORDS(1 << (RAW - 2))) u_sram (
