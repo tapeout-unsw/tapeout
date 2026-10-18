@@ -33,7 +33,7 @@ UNIT_GATED := arbiter mmio addr_decode
 # Blocks: sram_mem icache
 COCOTB_GATED := sram_mem icache
 
-.PHONY: help env lint synth synth-full check-top test test-core test-soc test-all \
+.PHONY: help env lint synth synth-full check-top test test-core test-soc test-soc-top test-all \
         test-unit test-unit-gated test-cocotb test-cocotb-gated waves ci clean
 
 help:
@@ -45,7 +45,8 @@ help:
 	@echo "make test                 core and SoC program tests at NREGS=$(NREGS)"
 	@echo "make test-core            core tests     (NREGS=16|32, TEST=all|<name>)"
 	@echo "make test-soc             SoC boot tests (NREGS=16|32, TEST=all|sample|<name>)"
-	@echo "make test-all             core and SoC tests at both register counts"
+	@echo "make test-soc-top         dual-core soc_top tests (NREGS=16|32, TEST=all|<name>)"
+	@echo "make test-all             core, SoC and soc_top tests at both register counts"
 	@echo "make test-unit            block unit testbenches (BLOCK=all|arbiter|addr_decode|icache|sram_mem|mmio)"
 	@echo "make test-unit-gated      only the unit testbenches listed in UNIT_GATED"
 	@echo "make test-cocotb          cocotb block tests (BLOCK=all|icache; SEED=<n>, WAVES=1)"
@@ -102,12 +103,16 @@ test-core:
 test-soc:
 	@./sim/run_soc.sh $(TEST) $(NREGS)
 
+test-soc-top:
+	@SIM_TOP=soc_top_tb ./sim/run_verilator.sh $(NREGS) $(TEST)
+
 test: test-core test-soc
 
 test-all:
 	@for n in 16 32; do \
 	  $(MAKE) --no-print-directory test-core NREGS=$$n TEST=all || exit 1; \
 	  $(MAKE) --no-print-directory test-soc  NREGS=$$n TEST=all || exit 1; \
+	  $(MAKE) --no-print-directory test-soc-top NREGS=$$n TEST=all || exit 1; \
 	done
 
 test-unit:
