@@ -49,15 +49,21 @@ module addr_decode #(
 
     output logic [31:0]    bus_rdata
 );
-    // Stub: outputs tied off until implemented.
-    assign s_en      = 1'b0;
-    assign s_addr    = '0;
-    assign s_wdata   = '0;
-    assign s_wstrb   = '0;
-    assign m_en      = 1'b0;
-    assign m_addr    = '0;
-    assign m_we      = 1'b0;
-    assign m_wdata   = '0;
-    assign m_core    = 1'b0;
-    assign bus_rdata = '0;
+    // to the SRAM
+    assign s_en    = b_valid & ~b_addr[12];
+    assign s_addr  = b_addr[RAW-1:2];          // byte address to word address
+    assign s_wdata = b_wdata;
+    assign s_wstrb = b_wstrb;
+
+    // to MMIO
+    assign m_en    = b_valid & b_addr[12];
+    assign m_addr  = b_addr[4:2];              // which register
+    assign m_we    = |b_wstrb;
+    assign m_wdata = b_wdata[7:0];
+    assign m_core  = (b_src == 3'd2);          // 1 when core 1's data port made the access
+
+    // read data comes back one cycle later so remember where this access went
+    logic sel_q;
+    always_ff @(posedge clk) sel_q <= b_addr[12];
+    assign bus_rdata = sel_q ? m_rdata : s_rdata;
 endmodule

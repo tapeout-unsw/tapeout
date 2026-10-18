@@ -76,14 +76,7 @@ jobs:
       - name: Unit testbenches with real checks (UNIT_GATED)
         run: nix develop .#ci --command make test-unit-gated
 
+      # Uses the .venv made in the "Python test environment" step.
       - name: cocotb block tests (COCOTB_GATED)
-        run: |
-          nix develop .#ci --command bash -c '
-            set -e
-            python3 -m venv .venv
-            source .venv/bin/activate
-            python -m pip install -q -r sim/requirements.txt
-            make test-cocotb-gated'
-      - name: cocotb unit tests (sim/cocotb/sram_mem)
         timeout-minutes: 20
-        run: nix develop .#ci --command make test-cocotb
+        run: nix develop .#ci --command make test-cocotb-gated
