@@ -36,3 +36,9 @@ results.xml
 # nix
 result
 .direnv/
+
+# sample programs
+/programs/build/
+/programs/bin/
+/programs/hex/
+/programs/obj_dir/

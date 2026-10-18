@@ -6,7 +6,12 @@
 //
 // Without +DONE the first UART byte must be 'P' (riscv-tests). With +DONE both
 // cores must write EXIT and the UART text must equal +UART (default "P").
-// +HEX2 loads a second image after the first finishes, without a reset.
+// An explicit empty +UART= skips the UART comparison in DONE mode.
+// +HEX2, +HEX3, ... load further images in order without a reset.
+// +DEBUG stops on EXIT or +CYCLES without requiring a UART pass message.
+// +DUMP_REGS=0 disables final register dumps; +TRACE_REGS=1 dumps each retire.
+// +PRINT_UART=0 disables printing received UART bytes.
+// +REG1=0:x5=ff +REG2=1:x5=ff00 checks final registers, values in hex.
 //
 module soc_top_tb;
 
@@ -35,11 +40,107 @@ module soc_top_tb;
     integer cycle = 0;
     always @(posedge clk) cycle <= cycle + 1;
 
+    integer cycle_limit = TIMEOUT, trace_regs = 0, dump_end = 1, print_uart = 1;
+    reg debug_mode = 0;
+
+    task automatic dump_registers(input integer c, input logic [31:0] pc);
+        $display("REGS core=%0d pc=%08x", c, pc);
+        for (int r = 0; r < NREGS; r++) begin
+            if (c == 0) $write(" x%0d=%08x", r, r == 0 ? 32'd0 : dut.u_core0.u_rf.regs[r]);
+            else        $write(" x%0d=%08x", r, r == 0 ? 32'd0 : dut.u_core1.u_rf.regs[r]);
+            if (r % 4 == 3) $write("\n");
+        end
+    endtask
+
+    // Save the retiring PC before the edge, then print after register writeback.
+    always @(posedge clk) begin : trace_step
+        logic completed0, completed1;
+        logic [31:0] pc0, pc1;
+        completed0 = !rst && core_run && dut.c0_retire;
+        completed1 = !rst && core_run && dut.c1_retire;
+        pc0 = dut.c0_retire_pc;
+        pc1 = dut.c1_retire_pc;
+        #1;
+        if (trace_regs != 0) begin
+            if (completed0) dump_registers(0, pc0);
+            if (completed1) dump_registers(1, pc1);
+        end
+    end
+
+    // Print both cores' final register values when the simulation finishes.
+    final begin
+        if (dump_end != 0) begin
+            dump_registers(0, dut.c0_retire_pc);
+            dump_registers(1, dut.c1_retire_pc);
+        end
+    end
+
     integer n_errors = 0;
     task automatic error(input string what);
         begin
             n_errors = n_errors + 1;
             if (n_errors <= 10) $display("ERROR   cycle %0d: %0s", cycle, what);
+        end
+    endtask
+
+    typedef struct packed {
+        integer core_id;
+        integer reg_index;
+        logic [31:0] value;
+    } register_expectation;
+    register_expectation register_checks[$];
+
+    task automatic read_register_checks;
+        register_expectation expected;
+        string spec, value_text;
+        integer index, parsed;
+        begin
+            index = 1;
+            while ($value$plusargs($sformatf("REG%0d=%%s", index), spec)) begin
+                parsed = $sscanf(spec, "%d:x%d=%s", expected.core_id,
+                                 expected.reg_index, value_text);
+                if (parsed != 3)
+                    $fatal(1, "Invalid register expectation '%s'; use core:xN=hex", spec);
+                if (expected.core_id < 0 || expected.core_id > 1)
+                    $fatal(1, "Invalid core in '%s'; expected 0 or 1", spec);
+                if (expected.reg_index < 0 || expected.reg_index >= NREGS)
+                    $fatal(1, "Invalid register in '%s'; expected x0 through x%0d", spec, NREGS-1);
+                if (value_text.len() >= 2 &&
+                    (value_text.substr(0, 1) == "0x" || value_text.substr(0, 1) == "0X"))
+                    value_text = value_text.substr(2, value_text.len()-1);
+                if (value_text.len() < 1 || value_text.len() > 8)
+                    $fatal(1, "Invalid value in '%s'; expected 1 to 8 hex digits", spec);
+                for (int digit = 0; digit < value_text.len(); digit++) begin
+                    if (!((value_text[digit] >= "0" && value_text[digit] <= "9") ||
+                          (value_text[digit] >= "a" && value_text[digit] <= "f") ||
+                          (value_text[digit] >= "A" && value_text[digit] <= "F")))
+                        $fatal(1, "Invalid hex value in '%s'", spec);
+                end
+                parsed = $sscanf(value_text, "%h", expected.value);
+                if (parsed != 1) $fatal(1, "Invalid hex value in '%s'", spec);
+                register_checks.push_back(expected);
+                index = index + 1;
+            end
+        end
+    endtask
+
+    task automatic check_registers;
+        register_expectation expected;
+        logic [31:0] actual;
+        begin
+            foreach (register_checks[index]) begin
+                expected = register_checks[index];
+                if (expected.reg_index == 0) actual = 32'd0;
+                else if (expected.core_id == 0)
+                    actual = dut.u_core0.u_rf.regs[expected.reg_index];
+                else
+                    actual = dut.u_core1.u_rf.regs[expected.reg_index];
+                if (actual !== expected.value)
+                    error($sformatf("core %0d x%0d = %08x, expected %08x",
+                                    expected.core_id, expected.reg_index, actual, expected.value));
+                else
+                    $display("REGPASS core=%0d x%0d=%08x", expected.core_id, expected.reg_index, actual);
+            end
         end
     endtask
 
@@ -72,6 +173,7 @@ module soc_top_tb;
             end
             if (ngot < 64) got[ngot] = b;
             ngot = ngot + 1;
+            if (print_uart != 0) $display("UART    rx=0x%02x '%c'", b, b);
         end
     end
 
@@ -86,6 +188,7 @@ module soc_top_tb;
             fd = $fopen(file, "r");
             if (fd == 0) $fatal(1, "Cannot open image: %s", file);
             $fclose(fd);
+            $display("LOAD    %0s", file);
             for (i = 0; i < WORDS; i = i + 1) img[i] = 32'hFFFF_FFFF;
             $readmemh(file, img);
             nwords = 0;
@@ -206,13 +309,13 @@ module soc_top_tb;
     end
 
     string  hexfile, hexfile2, tracefile, expect_uart, uart_text;
-    integer waited, i;
+    integer waited, i, next_image = 2;
     reg     multicore, reload, verdict;
 
     task automatic wait_done;
         begin
             waited = 0;
-            while (!done && waited < TIMEOUT) begin
+            while (!done && waited < cycle_limit) begin
                 @(posedge clk);
                 waited = waited + 1;
             end
@@ -222,10 +325,23 @@ module soc_top_tb;
     endtask
 
     initial begin
+        debug_mode = $test$plusargs("DEBUG");
+        if (debug_mode) cycle_limit = 10000;
+        void'($value$plusargs("CYCLES=%d", cycle_limit));
+        void'($value$plusargs("TRACE_REGS=%d", trace_regs));
+        void'($value$plusargs("DUMP_REGS=%d", dump_end));
+        void'($value$plusargs("PRINT_UART=%d", print_uart));
+        if (cycle_limit < 1) $fatal(1, "CYCLES must be positive");
+        read_register_checks();
         if (!$value$plusargs("HEX=%s", hexfile)) hexfile = "tests/rv32e_test.hex";
         reload    = $value$plusargs("HEX2=%s", hexfile2);
+        if (debug_mode && reload) $fatal(1, "DEBUG supports one image; use DONE for reload checks");
         multicore = $test$plusargs("DONE") || reload;
-        if (!$value$plusargs("UART=%s", expect_uart)) expect_uart = "P";
+        expect_uart = "P";
+        if ($test$plusargs("UART=")) begin
+            expect_uart = "";
+            void'($value$plusargs("UART=%s", expect_uart));
+        end
         if ($value$plusargs("TRACE=%s", tracefile)) begin
             $dumpfile(tracefile);
             $dumpvars(0, soc_top_tb);
@@ -239,12 +355,29 @@ module soc_top_tb;
         @(negedge clk);
         load_image();
 
+        if (debug_mode) begin
+            waited = 0;
+            while (!done && waited < cycle_limit) begin
+                @(negedge clk);
+                waited = waited + 1;
+            end
+            // Drain the final serial byte on EXIT, but respect a budget stop.
+            if (done) repeat (12 * CPB) @(negedge clk);
+            check_registers();
+            $display("Stopped %s: %s, cycles=%0d retired=%0d/%0d", hexfile,
+                     done ? "both cores wrote EXIT" : "cycle budget reached",
+                     waited, retired0, retired1);
+            if (n_errors != 0) $fatal(1, "Simulation failed: %0d checker errors", n_errors);
+            $finish;
+        end
+
         if (!multicore) begin
             waited = 0;
-            while (ngot == 0 && waited < TIMEOUT) begin
+            while (ngot == 0 && waited < cycle_limit) begin
                 @(posedge clk);
                 waited = waited + 1;
             end
+            check_registers();
             verdict = (ngot > 0) && (got[0] == "P") && (n_errors == 0);
             if (ngot == 0)
                 $display("TIMEOUT %0s  no serial output after %0d cycles", hexfile, waited);
@@ -258,11 +391,17 @@ module soc_top_tb;
         end
 
         wait_done();
-        if (reload) begin
+        while (reload) begin
+            if (dump_end != 0) begin
+                dump_registers(0, dut.c0_retire_pc);
+                dump_registers(1, dut.c1_retire_pc);
+            end
             read_image(hexfile2);
             load_image();
             if (done) error("done still high after the reload");
             wait_done();
+            next_image = next_image + 1;
+            reload = $value$plusargs($sformatf("HEX%0d=%%s", next_image), hexfile2);
         end
 
         waited = 0;
@@ -275,14 +414,18 @@ module soc_top_tb;
         for (i = 0; i < ngot && i < 64; i = i + 1)
             uart_text = {uart_text, string'(got[i])};
 
-        if (uart_text != expect_uart)
-            error($sformatf("UART printed \"%0s\", expected \"%0s\"", uart_text, expect_uart));
+        if (expect_uart.len() != 0) begin
+            if (ngot > 64) error("UART output exceeded the 64-byte capture buffer");
+            if (uart_text != expect_uart)
+                error($sformatf("UART printed \"%0s\", expected \"%0s\"", uart_text, expect_uart));
+        end
         if (retired0 == 0 || retired1 == 0)
             error($sformatf("a core never ran: %0d and %0d instructions", retired0, retired1));
+        check_registers();
 
         if (n_errors == 0)
             $display("PASS    %0s%0s  (UART \"%0s\", %0d + %0d instructions)",
-                     hexfile, reload ? " then reload" : "", uart_text, retired0, retired1);
+                     hexfile, next_image > 2 ? " then reload" : "", uart_text, retired0, retired1);
         else begin
             $display("FAIL    %0s  %0d checker errors", hexfile, n_errors);
             $fatal(1, "Simulation failed");
