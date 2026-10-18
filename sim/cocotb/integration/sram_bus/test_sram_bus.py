@@ -36,7 +36,15 @@ import cocotb
 import pytest
 from cocotb.triggers import ClockCycles, FallingEdge, ReadOnly, RisingEdge
 
-from ref_model import HERE, MASK32, ROOT, ByteMemory, as_int, env_int, run_cocotb, start_clock
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[3]
+
+sys.path.insert(0, str(HERE.parent))
+
+from ref_model import MASK32, ByteMemory, as_int, env_int, run_cocotb, start_clock
 
 MMIO_BIT = 1 << 12                     # b_addr[12] selects MMIO, not SRAM
 SRC_D0, SRC_IC0 = 1, 3                 # b_src values from the arbiter
