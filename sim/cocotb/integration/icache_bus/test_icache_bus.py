@@ -53,7 +53,14 @@ import cocotb
 import pytest
 from cocotb.triggers import FallingEdge, Timer
 
-from ref_model import HERE, ROOT, as_int, env_int, run_cocotb, start_clock
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[3]
+
+sys.path.insert(0, str(HERE.parent))
+
+from ref_model import as_int, env_int, run_cocotb, start_clock
 
 sys.path.insert(0, str(ROOT / "sim" / "cocotb" / "icache"))
 from icache_model import ICacheModel  # noqa: E402

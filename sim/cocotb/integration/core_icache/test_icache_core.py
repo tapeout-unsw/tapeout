@@ -20,10 +20,10 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
+ROOT = HERE.parents[3]
 
 # Tell Python where ref_model.py lives.
-sys.path.insert(0, str(HERE.parent / "integration"))
+sys.path.insert(0, str(HERE.parent))
 
 from ref_model import as_int, run_cocotb
 
