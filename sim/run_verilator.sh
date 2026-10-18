@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
 # Core: ./sim/run_verilator.sh [16|32] [test|all]
 # SoC:  ./sim/run_soc.sh [test|sample|all] [16|32]
+# Dual-core: SIM_TOP=soc_top_tb ./sim/run_verilator.sh [16|32] [test|all]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 NREGS=${1:-16}
 WHICH=${2:-all}
 TOP=${SIM_TOP:-core_mc_tb}
 case "$NREGS" in 16|32) ;; *) echo "NREGS must be 16 or 32" >&2; exit 2;; esac
-case "$TOP" in core_mc_tb|soc_tb) ;; *) echo "Unknown simulation top: $TOP" >&2; exit 2;; esac
+case "$TOP" in core_mc_tb|soc_tb|soc_top_tb) ;; *) echo "Unknown simulation top: $TOP" >&2; exit 2;; esac
 if (( $# > 2 )); then
     echo "Usage: $0 [16|32] [test|all]" >&2
     exit 2
 fi
 case "$WHICH" in
-    all) TESTS=("$ROOT"/tests/*.hex) ;;
+    all) TESTS=("$ROOT"/tests/*.hex)
+         [[ $TOP == soc_top_tb ]] && TESTS+=("$ROOT"/tests/multicore/*.hex) ;;
     sample) TESTS=(); for t in rv32e_test simple auipc jal lui addi lw sw beq; do
         TESTS+=("$ROOT/tests/$t.hex")
     done ;;
-    *) TESTS=("$ROOT/tests/$WHICH.hex") ;;
+    *) TESTS=("$ROOT/tests/$WHICH.hex")
+       [[ -f ${TESTS[0]} ]] || TESTS=("$ROOT/tests/multicore/$WHICH.hex") ;;
 esac
 for h in "${TESTS[@]}"; do
     [[ -f "$h" ]] || { echo "Test image not found: $h" >&2; exit 2; }
@@ -30,6 +34,8 @@ case "$TOP" in
     core_mc_tb) SRC=("${CORE_SRC[@]}") ;;
     soc_tb)     SRC=("${CORE_SRC[@]}" "$ROOT/rtl/soc.sv" "$ROOT/rtl/bootloader.sv"
                      "$ROOT/rtl/mem/sram_macro.sv" "$ROOT/rtl/mem/sram_mem.sv" "$ROOT"/rtl/periph/uart_*.sv) ;;
+    soc_top_tb) SRC=("${CORE_SRC[@]}" "$ROOT/rtl/soc_top.sv" "$ROOT/rtl/bootloader.sv" "$ROOT"/rtl/bus/*.sv
+                     "$ROOT"/rtl/cache/*.sv "$ROOT/rtl/mem/sram_macro.sv" "$ROOT/rtl/mem/sram_mem.sv" "$ROOT"/rtl/periph/*.sv) ;;
 esac
 
 # Keep compiled simulators and requested waveforms; capture output temporarily
@@ -49,6 +55,7 @@ pass=0; fail=0
 for h in "${TESTS[@]}"; do
     name=$(basename "$h" .hex)
     args=("+HEX=$h")
+    if [[ -f ${h%.hex}.args ]]; then read -ra extra <"${h%.hex}.args"; args+=("${extra[@]}"); fi
     if [[ ${TRACE:-0} == 1 ]]; then args+=("+TRACE=$BUILD/$name.vcd"); fi
     status=0
     timeout "${SIM_TIMEOUT:-180}" "$BUILD/simulator" "${args[@]}" >"$OUTPUT/test.log" 2>&1 || status=$?
