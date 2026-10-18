@@ -245,11 +245,11 @@ async def reset_flush_restart(dut):
 
 # ------------------------------------------------------------------ pytest
 
-def test_core_icache():
+def test_single_core_icache():
     # Compile the supplied RTL tree so all decoder/ALU/register-file dependencies
     # are included without guessing their subdirectory names. Match your team's
     # explicit source list instead if the tree includes duplicate/stub modules.
-    harness = HERE / "core_icache_harness.sv"
+    harness = HERE / "single_core_icache_harness.sv"
 
     sources = [
         *sorted((ROOT / "rtl/core").glob("*.sv")),
@@ -259,7 +259,7 @@ def test_core_icache():
 
     assert harness.is_file(), f"Missing harness: {harness}"
 
-    run_cocotb(toplevel="core_icache_harness",
-               sources=[*sources, harness],
-               parameters={}, test_module="test_icache_core",
+    run_cocotb(toplevel="single_core_icache_harness",
+               sources=sources,
+               parameters={}, test_module="test_single_icache_core",
                tag="core_icache")

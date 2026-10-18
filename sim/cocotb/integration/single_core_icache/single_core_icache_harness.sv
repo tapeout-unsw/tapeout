@@ -8,7 +8,7 @@
 // Python observes fetches, completed instructions, and result stores.
 //
 
-module core_icache_harness (
+module single_core_icache_harness (
     input logic clk,
     input logic rst,
     input logic flush,
