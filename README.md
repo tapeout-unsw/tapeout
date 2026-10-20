@@ -1,4 +1,4 @@
-# riskyC1-MC
+# BOB RV32E Core
 
 Dual-core RV32E SoC for the GF180MCU tapeout. Two multicycle cores, each with
 an instruction cache, share one SRAM and a set of memory-mapped peripherals
