@@ -56,8 +56,10 @@ module icache_FSM (
         end else begin
             case (state)
                 IDLE: begin
-                    if (i_req && !cache_hit)
-                        next_state = ic_gnt ? FILL : MISS;
+                    if (i_req && !cache_hit) begin
+                        if (ic_gnt) next_state = FILL;
+                        else        next_state = MISS;
+                    end
                 end
 
                 MISS: begin
