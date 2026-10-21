@@ -24,7 +24,7 @@
 //
 // Behaviour
 //   IDLE  hit:  i_valid = 1, i_rdata = the hit way's data. Stay in IDLE.
-//         i_req and miss: go to MISS.
+//         i_req and miss: ic_req = 1. On ic_gnt go to FILL, else MISS.
 //   MISS  ic_req = 1. On ic_gnt go to FILL.
 //   FILL  write {1, tag, bus_rdata} into the victim way, i_valid = 1,
 //         i_rdata = bus_rdata. Go to IDLE.
