@@ -2,7 +2,8 @@
 //
 // Dual-core soc_top testbench. Loads +HEX over the serial pin and runs it on
 // both cores. Every cycle it checks fetched instructions against the image,
-// RAM reads against a shadow copy, and arbiter grants.
+// RAM reads on the bus and every load a core receives (bus or data cache)
+// against a shadow copy of RAM, and arbiter grants. DCACHE goes to soc_top.
 //
 // Without +DONE the first UART byte must be 'P' (riscv-tests). With +DONE both
 // cores must write EXIT and the UART text must equal +UART (default "P").
@@ -22,6 +23,7 @@ module soc_top_tb;
     parameter integer BAUD_RATE = 100_000;
     localparam integer CPB      = CLK_FREQ / BAUD_RATE;
     parameter integer TIMEOUT   = 3_000_000;
+    parameter integer DCACHE    = 0;
 
     reg clk = 0, rst = 1;
     always #5 clk = ~clk;
@@ -31,7 +33,7 @@ module soc_top_tb;
     wire [1:0] dbg_exit;
 
     soc_top #(.NREGS(NREGS), .RAW(RAW),
-              .CLK_FREQ(CLK_FREQ), .BAUD_RATE(BAUD_RATE)) dut (
+              .CLK_FREQ(CLK_FREQ), .BAUD_RATE(BAUD_RATE), .DCACHE(DCACHE)) dut (
         .clk(clk), .rst(rst),
         .uart_rx(rx_pin), .uart_tx(tx_pin), .done(done),
         .dbg_core_run(core_run), .dbg_lock(dbg_lock), .dbg_exit(dbg_exit)
@@ -273,6 +275,40 @@ module soc_top_tb;
                     (shadow[dut.b_addr[RAW-1:2]] & ~lane_mask(dut.b_wstrb))
                   | (dut.b_wdata & lane_mask(dut.b_wstrb));
                 known[dut.b_addr[RAW-1:2]] <= known[dut.b_addr[RAW-1:2]] | dut.b_wstrb;
+            end
+        end
+    end
+
+    // A load accepted in cycle N must return RAM as it was before any write
+    // granted in cycle N.
+    reg [31:0] ld_exp  [2];
+    reg [3:0]  ld_known[2];
+    reg [12:0] ld_addr [2];
+    reg        ld_pending[2] = '{1'b0, 1'b0};
+
+    task automatic check_load(input integer c, input [31:0] got_data);
+        if ((got_data & lane_mask(ld_known[c])) !== (ld_exp[c] & lane_mask(ld_known[c])))
+            error($sformatf("core %0d load of %h returned %h, RAM held %h (bytes %b known)",
+                            c, ld_addr[c], got_data, ld_exp[c], ld_known[c]));
+    endtask
+
+    always @(posedge clk) begin
+        if (ld_pending[0]) check_load(0, dut.c0_d_rdata);
+        if (ld_pending[1]) check_load(1, dut.c1_d_rdata);
+        ld_pending[0] <= 1'b0;
+        ld_pending[1] <= 1'b0;
+        if (!rst && core_run) begin
+            if (dut.c0_d_req && dut.c0_d_gnt && dut.c0_d_wstrb == 4'b0000 && !dut.c0_d_addr[12]) begin
+                ld_pending[0] <= 1'b1;
+                ld_addr[0]    <= dut.c0_d_addr;
+                ld_exp[0]     <= shadow[dut.c0_d_addr[RAW-1:2]];
+                ld_known[0]   <= known[dut.c0_d_addr[RAW-1:2]];
+            end
+            if (dut.c1_d_req && dut.c1_d_gnt && dut.c1_d_wstrb == 4'b0000 && !dut.c1_d_addr[12]) begin
+                ld_pending[1] <= 1'b1;
+                ld_addr[1]    <= dut.c1_d_addr;
+                ld_exp[1]     <= shadow[dut.c1_d_addr[RAW-1:2]];
+                ld_known[1]   <= known[dut.c1_d_addr[RAW-1:2]];
             end
         end
     end

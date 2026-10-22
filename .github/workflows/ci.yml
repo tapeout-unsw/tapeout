@@ -79,6 +79,12 @@ jobs:
       - name: soc_top tests, 32 registers
         run: nix develop .#ci --command make test-soc-top NREGS=32
 
+      - name: soc_top tests with D-cache, 16 registers
+        run: nix develop .#ci --command make test-soc-top NREGS=16 DCACHE=1
+
+      - name: soc_top tests with D-cache, 32 registers
+        run: nix develop .#ci --command make test-soc-top NREGS=32 DCACHE=1
+
       - name: Unit testbenches with real checks (UNIT_GATED)
         run: nix develop .#ci --command make test-unit-gated
 

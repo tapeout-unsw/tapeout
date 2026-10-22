@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Core: ./sim/run_verilator.sh [16|32] [test|all]
 # SoC:  ./sim/run_soc.sh [test|sample|all] [16|32]
-# Dual-core: SIM_TOP=soc_top_tb ./sim/run_verilator.sh [16|32] [test|all]
+# Dual-core: SIM_TOP=soc_top_tb [DCACHE=0|1] ./sim/run_verilator.sh [16|32] [test|all]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 NREGS=${1:-16}
 WHICH=${2:-all}
 TOP=${SIM_TOP:-core_mc_tb}
+DCACHE=${DCACHE:-0}
+case "$DCACHE" in 0|1) ;; *) echo "DCACHE must be 0 or 1" >&2; exit 2;; esac
 case "$NREGS" in 16|32) ;; *) echo "NREGS must be 16 or 32" >&2; exit 2;; esac
 case "$TOP" in core_mc_tb|soc_tb|soc_top_tb) ;; *) echo "Unknown simulation top: $TOP" >&2; exit 2;; esac
 if (( $# > 2 )); then
@@ -41,11 +43,16 @@ esac
 # Keep compiled simulators and requested waveforms; capture output temporarily
 # to validate results and show diagnostics only when a command fails.
 BUILD="$ROOT/sim/obj_dir/${TOP}_${NREGS}"
+PARAMS=("-GNREGS=$NREGS")
+if [[ $TOP == soc_top_tb ]]; then
+    BUILD="${BUILD}_dc${DCACHE}"
+    PARAMS+=("-GDCACHE=$DCACHE")
+fi
 mkdir -p "$BUILD"
 OUTPUT=$(mktemp -d)
 trap 'rm -rf "$OUTPUT"' EXIT
 if ! verilator --binary --timing --trace --top-module "$TOP" \
-    "-GNREGS=$NREGS" --Mdir "$BUILD" -o simulator -j "${JOBS:-2}" \
+    "${PARAMS[@]}" --Mdir "$BUILD" -o simulator -j "${JOBS:-2}" \
     "${SRC[@]}" "$ROOT/tb/$TOP.sv" >"$OUTPUT/build.log" 2>&1; then
     cat "$OUTPUT/build.log" >&2
     exit 1
@@ -68,5 +75,5 @@ for h in "${TESTS[@]}"; do
         fail=$((fail+1))
     fi
 done
-echo "$TOP NREGS=$NREGS : $pass passed, $fail failed"
+echo "$TOP NREGS=$NREGS${PARAMS[1]:+ DCACHE=$DCACHE} : $pass passed, $fail failed"
 (( fail == 0 ))
