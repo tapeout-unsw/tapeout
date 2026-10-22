@@ -52,8 +52,8 @@
 // I-cache (flush is high while the bootloader loads a program). They clear the
 // valid bits, which is the storage's job.
 //
-// dcache_off (the chicken bit) must only change while flush is high: a store
-// that passes through while off would not update a line cached earlier.
+// dcache_off (the chicken bit) may change at any time: dcache.sv clears every
+// line while it is high, so no line can go stale while stores pass through.
 //
 module dcache_FSM (
     input  logic clk,

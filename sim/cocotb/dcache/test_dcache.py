@@ -212,6 +212,8 @@ def test_dcache(raw):
     sources = [
         "rtl/cache/dcache.sv",
         "rtl/cache/dcache_storage.sv",
+        "rtl/cache/dcache_FSM.sv",
+        "rtl/cache/dcache_snoop.sv",
         "rtl/cache/icache_lru.sv",
     ]
     run("dcache", sources, "dcache", "test_dcache",

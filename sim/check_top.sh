@@ -10,7 +10,7 @@ cd "$ROOT"
 CORE="rtl/core/core.sv rtl/core/decoder.sv rtl/core/imm_gen.sv rtl/core/alu.sv rtl/core/register_file.sv rtl/core/mem_access.sv"
 SRC="rtl/soc_top.sv rtl/bootloader.sv rtl/bus/arbiter.sv rtl/bus/addr_decode.sv \
      rtl/cache/icache.sv rtl/cache/icache_FSM.sv rtl/cache/icache_storage.sv rtl/cache/icache_lru.sv \
-     rtl/cache/dcache.sv rtl/cache/dcache_storage.sv \
+     rtl/cache/dcache.sv rtl/cache/dcache_storage.sv rtl/cache/dcache_FSM.sv rtl/cache/dcache_snoop.sv \
      rtl/mem/sram_macro.sv rtl/mem/sram_mem.sv rtl/periph/mmio.sv \
      rtl/periph/uart_rx.sv rtl/periph/uart_tx.sv $CORE"
 

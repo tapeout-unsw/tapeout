@@ -31,8 +31,8 @@ UNIT_GATED := arbiter mmio addr_decode
 # virtualenv: python -m pip install -r sim/requirements.txt. As with
 # UNIT_GATED, add a block here once its RTL passes its tests; `make ci` and CI
 # then require it to stay green.
-# Blocks: sram_mem icache dcache
-COCOTB_GATED := sram_mem icache dcache
+# Blocks: sram_mem icache dcache dcache_fsm dcache_snoop
+COCOTB_GATED := sram_mem icache dcache dcache_fsm dcache_snoop
 
 .PHONY: help env lint synth synth-full check-top test test-core test-soc test-soc-top test-all \
         test-unit test-unit-gated test-cocotb test-cocotb-gated waves ci clean
@@ -50,7 +50,7 @@ help:
 	@echo "make test-all             core, SoC and soc_top tests at both register counts, soc_top with and without D-cache"
 	@echo "make test-unit            block unit testbenches (BLOCK=all|arbiter|addr_decode|icache|sram_mem|mmio)"
 	@echo "make test-unit-gated      only the unit testbenches listed in UNIT_GATED"
-	@echo "make test-cocotb          cocotb block tests (BLOCK=all|icache|dcache|sram_mem; SEED=<n>, WAVES=1)"
+	@echo "make test-cocotb          cocotb block tests (BLOCK=all|icache|dcache|dcache_fsm|dcache_snoop|sram_mem; SEED=<n>, WAVES=1)"
 	@echo "make test-cocotb-gated    only the cocotb blocks listed in COCOTB_GATED"
 	@echo "make test-cocotb          cocotb unit tests (sim/cocotb/sram_mem)"
 	@echo "make waves TEST=<name>    run one core test and dump a VCD"

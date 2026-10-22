@@ -2,7 +2,8 @@
 //
 // Data cache. Sits between a core's data port and the bus, like icache.
 // 2-way set associative, 8 sets, one 32-bit word per line. Write-through,
-// no allocate on a store miss, kept coherent by snooping bus writes.
+// no allocate on a store miss, snoop-invalidate. dcache_FSM decides what each
+// access does, dcache_snoop watches the bus, this module is the datapath.
 //
 // Parameters
 //   RAW   RAM byte address bits. Tag bits at or above RAW are zeroed, so
@@ -13,22 +14,11 @@
 // this cycle; load data is on d_rdata the cycle after.
 //
 // Address split: index = d_addr[4:2], tag = d_addr[10:5].
+// Victim: an invalid way if there is one, else the LRU way. Hits, store hits
+// and fills update the LRU bit.
 //
-// Behaviour (cacheable = d_addr[12] == 0 and off == 0)
-//   load hit     d_gnt at once, no bus request; next cycle d_rdata = cached word.
-//   load miss    dc_req until dc_gnt; next cycle d_rdata = bus_rdata, which is
-//                also written into the victim way.
-//   store        always to the bus. On dc_gnt a hit merges the strobed bytes.
-//   uncacheable  passed straight through.
-//   Victim: an invalid way if there is one, else the LRU way. Hits, store
-//   hits and fills update the LRU bit.
-//
-// Snoop: a RAM write by another source drops the matching line. If it hits
-// the word being filled this cycle, the core still gets bus_rdata (its load
-// was first on the bus) but the word is not installed.
-//
-// flush clears every line and the load in flight. off (chicken bit) clears
-// every line and makes everything uncacheable.
+// flush clears every line. off (chicken bit) clears every line and makes every
+// access pass through, so it may change at any time.
 //
 module dcache #(
     parameter int         RAW = 10,
@@ -63,71 +53,103 @@ module dcache #(
     // ---------------- Address split ----------------
     logic [2:0] index;
     logic [5:0] tag;
-    logic       cacheable, is_load, is_store;
-    assign index     = d_addr[4:2];
-    assign tag       = d_addr[10:5] & TAG_MASK;
-    assign cacheable = !d_addr[12] && !off;
-    assign is_load   = d_req && (d_wstrb == 4'b0000);
-    assign is_store  = d_req && (d_wstrb != 4'b0000);
+    assign index = d_addr[4:2];
+    assign tag   = d_addr[10:5] & TAG_MASK;
 
-    // Load accepted last cycle: a hit to return or a miss to install.
-    logic       hit_q, fill_q, way_q;
-    logic [2:0] index_q;
-    logic [5:0] tag_q;
-    logic [2:0] storage_index;
-    assign storage_index = (hit_q || fill_q) ? index_q : index;
+    // Saved at the grant of a load miss, used in its FILL cycle.
+    logic [12:0] miss_addr;
+    logic [2:0]  miss_index;
+    logic [5:0]  miss_tag;
+    logic        miss_victim;
+
+    logic        serve_hit, miss_start, store_hit, in_fill, fill, resp_bus, kill_fill;
+    logic [2:0]  storage_index, snoop_index;
+    assign storage_index = in_fill ? miss_index : index;
 
     // ---------------- Storage ----------------
     logic [31:0] sec0_data,  sec1_data;
     logic [5:0]  sec0_tag,   sec1_tag;
     logic        sec0_valid, sec1_valid;
-    logic        install, store_hit, snoop_en;
-    logic        hit0, hit1, hit;
-    logic [2:0]  snoop_index;
-    logic [5:0]  snoop_tag;
+    logic [5:0]  sec0_snoop_tag,   sec1_snoop_tag;
+    logic        sec0_snoop_valid, sec1_snoop_valid;
+    logic        sec0_inv, sec1_inv;
+    logic        hit0, hit1, cache_hit;
 
     dcache_storage u_storage (
-        .clk            (clk),
-        .reset          (rst | flush | off),
-        .index          (storage_index),
+        .clk              (clk),
+        .reset            (rst | flush | off),
+        .index            (storage_index),
+        .snoop_index      (snoop_index),
 
-        .sec0_write_en  (install && !way_q),
-        .sec1_write_en  (install &&  way_q),
-        .write_data     (bus_rdata),
-        .write_tag      (tag_q),
+        .sec0_write_en    (fill && !miss_victim),
+        .sec1_write_en    (fill &&  miss_victim),
+        .write_data       (bus_rdata),
+        .write_tag        (miss_tag),
 
-        .sec0_update_en (store_hit && hit0),
-        .sec1_update_en (store_hit && hit1),
-        .update_data    (d_wdata),
-        .update_strb    (d_wstrb),
+        .sec0_update_en   (store_hit && hit0),
+        .sec1_update_en   (store_hit && hit1),
+        .update_data      (d_wdata),
+        .update_strb      (d_wstrb),
 
-        .snoop_en       (snoop_en),
-        .snoop_index    (snoop_index),
-        .snoop_tag      (snoop_tag),
+        .sec0_inv         (sec0_inv),
+        .sec1_inv         (sec1_inv),
 
-        .sec0_data      (sec0_data),
-        .sec1_data      (sec1_data),
-        .sec0_tag       (sec0_tag),
-        .sec1_tag       (sec1_tag),
-        .sec0_valid     (sec0_valid),
-        .sec1_valid     (sec1_valid)
+        .sec0_data        (sec0_data),
+        .sec1_data        (sec1_data),
+        .sec0_tag         (sec0_tag),
+        .sec1_tag         (sec1_tag),
+        .sec0_valid       (sec0_valid),
+        .sec1_valid       (sec1_valid),
+        .sec0_snoop_tag   (sec0_snoop_tag),
+        .sec1_snoop_tag   (sec1_snoop_tag),
+        .sec0_snoop_valid (sec0_snoop_valid),
+        .sec1_snoop_valid (sec1_snoop_valid)
     );
 
     // ---------------- Hit detection ----------------
-    logic load_hit, fill_start;
-    assign hit0       = sec0_valid && (sec0_tag == tag);
-    assign hit1       = sec1_valid && (sec1_tag == tag);
-    assign hit        = cacheable && (hit0 || hit1);
-    assign load_hit   = is_load && hit;
-    assign fill_start = is_load && cacheable && !hit && dc_gnt;
-    assign store_hit  = is_store && hit && dc_gnt;
+    assign hit0      = sec0_valid && (sec0_tag == tag);
+    assign hit1      = sec1_valid && (sec1_tag == tag);
+    assign cache_hit = hit0 || hit1;
+
+    // ---------------- FSM ----------------
+    dcache_FSM u_fsm (
+        .clk        (clk),
+        .rst        (rst),
+        .flush      (flush),
+        .dcache_off (off),
+        .d_req      (d_req),
+        .d_mmio     (d_addr[12]),
+        .d_store    (|d_wstrb),
+        .d_gnt      (d_gnt),
+        .cache_hit  (cache_hit),
+        .dc_req     (dc_req),
+        .dc_gnt     (dc_gnt),
+        .kill_fill  (kill_fill),
+        .serve_hit  (serve_hit),
+        .miss_start (miss_start),
+        .store_hit  (store_hit),
+        .in_fill    (in_fill),
+        .fill       (fill),
+        .resp_bus   (resp_bus)
+    );
 
     // ---------------- Snoop ----------------
-    assign snoop_en    = b_valid && (b_wstrb != 4'b0000) && !b_addr[12] && (b_src != SRC);
-    assign snoop_index = b_addr[4:2];
-    assign snoop_tag   = b_addr[10:5] & TAG_MASK;
-    assign install     = fill_q && !off
-                       && !(snoop_en && snoop_index == index_q && snoop_tag == tag_q);
+    dcache_snoop #(.RAW(RAW), .OWN_SRC(int'(SRC))) u_snoop (
+        .b_valid     (b_valid),
+        .b_addr      (b_addr),
+        .b_wstrb     (b_wstrb),
+        .b_src       (b_src),
+        .snoop_index (snoop_index),
+        .sec0_valid  (sec0_snoop_valid),
+        .sec0_tag    (sec0_snoop_tag),
+        .sec1_valid  (sec1_snoop_valid),
+        .sec1_tag    (sec1_snoop_tag),
+        .inv0        (sec0_inv),
+        .inv1        (sec1_inv),
+        .in_fill     (in_fill),
+        .miss_addr   (miss_addr),
+        .kill_fill   (kill_fill)
+    );
 
     // ---------------- LRU ----------------
     logic lru_victim, victim_way;
@@ -139,33 +161,28 @@ module dcache #(
         .clk        (clk),
         .rst        (rst),
         .index      (storage_index),
-        .access     (load_hit || store_hit || install),
-        .access_way (install ? way_q : hit1),
+        .access     (serve_hit || store_hit || fill),
+        .access_way (fill ? miss_victim : hit1),
         .victim_way (lru_victim)
     );
 
-    // ---------------- Load in flight ----------------
+    // ---------------- Saved miss and hit data ----------------
+    logic [31:0] hit_data;
     always_ff @(posedge clk) begin
-        if (rst || flush) begin
-            hit_q  <= 1'b0;
-            fill_q <= 1'b0;
-        end else begin
-            hit_q  <= load_hit;
-            fill_q <= fill_start;
-        end
-        if (load_hit || fill_start) begin
-            index_q <= index;
-            tag_q   <= tag;
-            way_q   <= load_hit ? hit1 : victim_way;
+        if (serve_hit)
+            hit_data <= hit1 ? sec1_data : sec0_data;
+        if (miss_start) begin
+            miss_addr   <= d_addr;
+            miss_index  <= index;
+            miss_tag    <= tag;
+            miss_victim <= victim_way;
         end
     end
 
     // ---------------- Core side ----------------
-    assign d_gnt   = load_hit || dc_gnt;
-    assign d_rdata = hit_q ? (way_q ? sec1_data : sec0_data) : bus_rdata;
+    assign d_rdata = resp_bus ? bus_rdata : hit_data;
 
     // ---------------- Bus side ----------------
-    assign dc_req   = d_req && !load_hit;
     assign dc_addr  = d_addr;
     assign dc_wdata = d_wdata;
     assign dc_wstrb = d_wstrb;
