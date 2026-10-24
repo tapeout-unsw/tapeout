@@ -2,8 +2,8 @@
 //
 // Instruction cache FSM
 //
-// IDLE - check for a hit or miss
-// MISS - request data from the bus and wait for a grant
+// IDLE - check for a hit or miss; on a miss, request the bus straight away
+// MISS - keep requesting until the arbiter grants
 // FILL - the SRAM data is ready, so write it into the cache
 //
 // The SRAM read takes one cycle. When ic_gnt goes high, the SRAM gets the
@@ -56,8 +56,10 @@ module icache_FSM (
         end else begin
             case (state)
                 IDLE: begin
-                    if (i_req && !cache_hit)
-                        next_state = MISS;
+                    if (i_req && !cache_hit) begin
+                        if (ic_gnt) next_state = FILL;
+                        else        next_state = MISS;
+                    end
                 end
 
                 MISS: begin
@@ -88,6 +90,7 @@ module icache_FSM (
                 IDLE: begin
                     serve_hit  = i_req && cache_hit;
                     miss_start = i_req && !cache_hit;
+                    ic_req     = i_req && !cache_hit;
                 end
 
                 MISS: ic_req = 1'b1;
