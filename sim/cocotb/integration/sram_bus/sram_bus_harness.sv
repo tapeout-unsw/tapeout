@@ -44,7 +44,8 @@ module sram_bus_harness #(
         .d1_req(1'b0),     .d1_addr(13'd0),     .d1_wdata(32'd0),    .d1_wstrb(4'd0),     .d1_gnt(),
         .ic0_req(ic0_req), .ic0_addr(ic0_addr), .ic0_wdata(32'd0),   .ic0_wstrb(4'd0),    .ic0_gnt(ic0_gnt),
         .ic1_req(1'b0),    .ic1_addr(13'd0),    .ic1_wdata(32'd0),   .ic1_wstrb(4'd0),    .ic1_gnt(),
-        .b_valid(b_valid), .b_addr(b_addr), .b_wdata(b_wdata), .b_wstrb(b_wstrb), .b_src(b_src)
+        .b_valid(b_valid), .b_addr(b_addr), .b_wdata(b_wdata), .b_wstrb(b_wstrb), .b_src(b_src),
+        .d0_atomic(1'b0), .d1_atomic(1'b0)      // no atomics in this harness
     );
 
     // ---------------- SRAM side of addr_decode (see the header) ----------------

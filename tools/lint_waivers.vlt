@@ -12,6 +12,8 @@ lint_off -rule EOFNEWLINE
 
 // The core leaves the decoder's opc and func7 outputs unconnected on purpose.
 lint_off -rule PINCONNECTEMPTY -file "*rtl/core/core.sv"
+// The single-core soc has no arbiter, so the core's d_atomic bus-hold output is unused.
+lint_off -rule PINCONNECTEMPTY -file "*rtl/soc.sv" -match "*d_atomic*"
 
 // imm_gen never needs the opcode bits; the caller passes the whole instruction.
 lint_off -rule UNUSEDSIGNAL -file "*rtl/core/imm_gen.sv" -match "*'inst'*"

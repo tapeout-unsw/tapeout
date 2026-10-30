@@ -115,7 +115,7 @@ module soc_top #(
     logic [3:0]  c1_d_wstrb;
     logic        c1_retire;
     logic [31:0] c1_retire_pc;
-    logic        c1_d_atomic
+    logic        c1_d_atomic;
 
 
     core #(.NREGS(NREGS)) u_core1 (
@@ -193,7 +193,7 @@ module soc_top #(
         .ic0_req(ic0_req), .ic0_addr(ic0_addr), .ic0_wdata(ic0_wdata), .ic0_wstrb(ic0_wstrb), .ic0_gnt(ic0_gnt),
         .ic1_req(ic1_req), .ic1_addr(ic1_addr), .ic1_wdata(ic1_wdata), .ic1_wstrb(ic1_wstrb), .ic1_gnt(ic1_gnt),
         .b_valid(b_valid), .b_addr(b_addr), .b_wdata(b_wdata), .b_wstrb(b_wstrb), .b_src(b_src),
-        .d0_atomic(c0_d_atomic), .d1_atomic(c1_d_atomic),
+        .d0_atomic(c0_d_atomic), .d1_atomic(c1_d_atomic)
     );
 
     // ---------------- address decode and read select ----------------
