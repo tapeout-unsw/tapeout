@@ -44,13 +44,14 @@ module core #(
     output logic [3:0]  d_wstrb,      // 0 = read
     input  logic        d_gnt,
     input  logic [31:0] d_rdata,
+    output logic        d_atomic,
 
     // Observability: pulses high for one cycle as each instruction completes.
     output logic        retire,
     output logic [31:0] retire_pc
 );
     typedef enum logic [2:0] {
-        S_FETCH, S_EXEC, S_MEM, S_MEM_W
+        S_FETCH, S_EXEC, S_MEM, S_MEM_W, S_AMO_WAIT
     } state_e;
 
     state_e      state;
@@ -67,7 +68,8 @@ module core #(
         .func3(func3), .func7(),
         .reg_write(reg_write), .imm_sel(imm_sel), .alu_op(alu_op),
         .alu_src(alu_src), .branch(branch), .jmp(jmp), .jmpr(jmpr),
-        .mem_read(mem_read), .mem_write(mem_write), .lui(lui), .auipc(auipc)
+        .mem_read(mem_read), .mem_write(mem_write), .lui(lui), .auipc(auipc),
+        .amo_swap(amo_swap),
     );
 
     logic [31:0] imm;
@@ -130,6 +132,7 @@ module core #(
 
     // ---------------- writeback mux ----------------
     always_comb begin
+        if      (amo_swap)   wb_data = amo_old;
         if      (lui)        wb_data = imm;
         else if (auipc)      wb_data = pc + imm;
         else if (jmp | jmpr) wb_data = pc + 32'd4;
@@ -141,18 +144,38 @@ module core #(
     assign i_req   = (state == S_FETCH);
     assign i_addr  = pc[12:0];
 
-    assign d_req   = (state == S_MEM);
-    assign d_addr  = {alu_result[12:2], 2'b00};
-    assign d_wdata = st_wdata;
-    assign d_wstrb = mem_write ? st_wstrb : 4'b0000;
+     // ---------------- amoswap signals ----------------
+    logic        amo_swap, amo_busy, amo_done, amo_req;
+    logic [12:0] amo_addr;
+    logic [31:0] amo_wdata;
+    logic [3:0]  amo_wstrb;
+    logic [31:0] amo_old;
+
+    amoswap u_amoswap (
+        .clk(clk), .rst(rst), .start(state == S_EXEC && amo_swap),
+        .address({rs1_data[12:2], 2'b00}), .replacement(rs2_data),
+        .busy(amo_busy), .done(amo_done), .old_value(amo_old),
+        .mem_req(amo_req), .mem_addr(amo_addr), .mem_wdata(amo_wdata),
+        .mem_wstrb(amo_wstrb), .mem_gnt(d_gnt && state == S_AMO_WAIT),
+        .mem_rdata(d_rdata)
+    );
+
+    assign d_atomic = (state == S_AMO_WAIT) && amo_busy;
+
+    assign d_req   = (state == S_AMO_WAIT) ? amo_req : (state == S_MEM);;
+    assign d_addr  = (state == S_AMO_WAIT) ? amo_addr : {alu_result[12:2], 2'b00};
+    assign d_wdata = (state == S_AMO_WAIT) ? amo_wdata : st_wdata;
+    assign d_wstrb = (state == S_AMO_WAIT) ? amp_wstrb : mem_write ? st_wstrb : 4'b0000;
 
     // Register write: EXEC for ALU-class instructions, MEM_W for loads.
     assign rf_we = reg_write & ( (state == S_EXEC && !mem_read && !mem_write)
-                               | (state == S_MEM_W) );
+                               | (state == S_MEM_W && !amo_swap)
+                               | (state == S_AMO_WAIT && amo_done));
 
     assign retire    = (state == S_EXEC && !mem_read && !mem_write)
                      | (state == S_MEM  &&  mem_write && d_gnt)
-                     | (state == S_MEM_W);
+                     | (state == S_MEM_W && !amo_swap)
+                     | (state == S_AMO_WAIT && amo_done);
     assign retire_pc = pc;
 
     // ---------------- FSM ----------------
@@ -173,6 +196,12 @@ module core #(
                     else begin pc <= next_pc; state <= S_FETCH; end
                 end
                 S_MEM_W: begin pc <= next_pc; state <= S_FETCH; end
+                S_AMO_WAIT: begin
+                    if (amo_done) begin
+                        pc    <= next_pc;
+                        state <= S_FETCH;
+                    end
+                end
                 default:   state <= S_FETCH;
             endcase
         end

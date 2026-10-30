@@ -33,6 +33,7 @@ module arbiter (
     input  logic [12:0] d0_addr,
     input  logic [31:0] d0_wdata,
     input  logic [3:0]  d0_wstrb,
+    input  logic        d0_atomic,
     output logic        d0_gnt,
 
     // Core 1 data port request
@@ -40,6 +41,7 @@ module arbiter (
     input  logic [12:0] d1_addr,
     input  logic [31:0] d1_wdata,
     input  logic [3:0]  d1_wstrb,
+    input  logic        d1_atomic,
     output logic        d1_gnt,
 
     // Core 0 instruction cache request
@@ -66,12 +68,37 @@ module arbiter (
 
     logic [1:0] rr_pointer;         // Round-robin pointer (0 = d0, 1 = d1, 2 = ic0, 3 = ic1)
 
+    logic atomic_busy;
+    logic atomic_owner; // 0 = core 0, 1 = core 1
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            atomic_busy  <= 1'b0;
+            atomic_owner <= 1'b0;
+        end else if (atomic_busy) begin
+            if (b_valid && (|b_wstrb))
+                atomic_busy <= 1'b0;
+        end else if (b_valid && !(|b_wstrb)) begin
+            if ((b_src == 3'd1 && d0_atomic)
+             || (b_src == 3'd2 && d1_atomic)) begin
+                atomic_busy  <= 1'b1;
+                atomic_owner <= (b_src == 3'd2);
+            end
+        end
+    end
+
     always_comb begin
         b_src = 3'd5;               // Default to nobody won
         b_valid = 1'b1;             // Default to somebody won
 
         // Handle choosing source based on pointer position
-        if (~loading) begin
+        if (atomic_busy) begin
+            b_valid = atomic_owner ? d1_req : d0_req;
+        if (b_valid)
+            b_src = atomic_owner ? 3'd2 : 3'd1;
+        end
+
+        else if (~loading) begin
             case (rr_pointer)
                 2'd0: begin
                     if (d0_req) b_src = 3'd1;

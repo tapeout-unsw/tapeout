@@ -83,13 +83,14 @@ module soc_top #(
     logic [3:0]  c0_d_wstrb;
     logic        c0_retire;
     logic [31:0] c0_retire_pc;
+    logic        c0_d_atomic;
 
     core #(.NREGS(NREGS)) u_core0 (
         .clk(clk), .rst(core_rst),
         .i_req(i0_req), .i_addr(i0_addr), .i_valid(i0_valid), .i_rdata(i0_rdata),
         .d_req(c0_d_req), .d_addr(c0_d_addr), .d_wdata(c0_d_wdata), .d_wstrb(c0_d_wstrb),
         .d_gnt(c0_d_gnt), .d_rdata(c0_d_rdata),
-        .retire(c0_retire), .retire_pc(c0_retire_pc)
+        .retire(c0_retire), .retire_pc(c0_retire_pc), .d_atomic(c0_d_atomic)
     );
 
     logic        ic0_req, ic0_gnt;
@@ -114,13 +115,15 @@ module soc_top #(
     logic [3:0]  c1_d_wstrb;
     logic        c1_retire;
     logic [31:0] c1_retire_pc;
+    logic        c1_d_atomic
+
 
     core #(.NREGS(NREGS)) u_core1 (
         .clk(clk), .rst(core_rst),
         .i_req(i1_req), .i_addr(i1_addr), .i_valid(i1_valid), .i_rdata(i1_rdata),
         .d_req(c1_d_req), .d_addr(c1_d_addr), .d_wdata(c1_d_wdata), .d_wstrb(c1_d_wstrb),
         .d_gnt(c1_d_gnt), .d_rdata(c1_d_rdata),
-        .retire(c1_retire), .retire_pc(c1_retire_pc)
+        .retire(c1_retire), .retire_pc(c1_retire_pc), .d_atomic(c1_d_atomic)
     );
 
     logic        ic1_req, ic1_gnt;
@@ -159,7 +162,8 @@ module soc_top #(
             .d_gnt(c0_d_gnt), .d_rdata(c0_d_rdata),
             .dc_req(d0_req), .dc_addr(d0_addr), .dc_wdata(d0_wdata), .dc_wstrb(d0_wstrb),
             .dc_gnt(d0_gnt), .bus_rdata(bus_rdata),
-            .b_valid(b_valid), .b_addr(b_addr), .b_wstrb(b_wstrb), .b_src(b_src)
+            .b_valid(b_valid), .b_addr(b_addr), .b_wstrb(b_wstrb), .b_src(b_src),
+            .d_atomic(c0_d_atomic)
         );
 
         dcache #(.RAW(RAW), .SRC(3'd2)) u_dcache1 (
@@ -168,7 +172,8 @@ module soc_top #(
             .d_gnt(c1_d_gnt), .d_rdata(c1_d_rdata),
             .dc_req(d1_req), .dc_addr(d1_addr), .dc_wdata(d1_wdata), .dc_wstrb(d1_wstrb),
             .dc_gnt(d1_gnt), .bus_rdata(bus_rdata),
-            .b_valid(b_valid), .b_addr(b_addr), .b_wstrb(b_wstrb), .b_src(b_src)
+            .b_valid(b_valid), .b_addr(b_addr), .b_wstrb(b_wstrb), .b_src(b_src),
+            .d_atomic(c1_d_atomic)
         );
     end else begin : g_no_dcache
         assign d0_req   = c0_d_req;    assign d1_req   = c1_d_req;
@@ -181,13 +186,14 @@ module soc_top #(
 
     // ---------------- arbiter ----------------
     arbiter u_arbiter (
-        .clk(clk), .rst(rst), .loading(loading),
+        .clk(clk), .rst(core_rst), .loading(loading),
         .boot_req(boot_req), .boot_addr(boot_addr), .boot_wdata(boot_wdata), .boot_wstrb(boot_wstrb),
         .d0_req(d0_req),   .d0_addr(d0_addr),   .d0_wdata(d0_wdata),   .d0_wstrb(d0_wstrb),   .d0_gnt(d0_gnt),
         .d1_req(d1_req),   .d1_addr(d1_addr),   .d1_wdata(d1_wdata),   .d1_wstrb(d1_wstrb),   .d1_gnt(d1_gnt),
         .ic0_req(ic0_req), .ic0_addr(ic0_addr), .ic0_wdata(ic0_wdata), .ic0_wstrb(ic0_wstrb), .ic0_gnt(ic0_gnt),
         .ic1_req(ic1_req), .ic1_addr(ic1_addr), .ic1_wdata(ic1_wdata), .ic1_wstrb(ic1_wstrb), .ic1_gnt(ic1_gnt),
-        .b_valid(b_valid), .b_addr(b_addr), .b_wdata(b_wdata), .b_wstrb(b_wstrb), .b_src(b_src)
+        .b_valid(b_valid), .b_addr(b_addr), .b_wdata(b_wdata), .b_wstrb(b_wstrb), .b_src(b_src),
+        .d0_atomic(c0_d_atomic), .d1_atomic(c1_d_atomic),
     );
 
     // ---------------- address decode and read select ----------------
