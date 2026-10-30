@@ -16,6 +16,7 @@ module icache_tb;
     always #5 clk = ~clk;
 
     logic        flush = 0;
+    logic        off = 0;
     logic        i_req = 0;
     logic [12:0] i_addr = 0;
     logic        i_valid;
