@@ -34,6 +34,7 @@
 // flush returns the FSM to IDLE, clears a saved miss and clears every valid
 // bit (it drives the storage reset together with rst). It is high while the
 // bootloader loads a program, so no line from the old program survives.
+// off (chicken bit) clears every line and makes every access pass through
 
 module icache #(
     parameter int RAW = 10
@@ -41,6 +42,7 @@ module icache #(
     input  logic        clk,
     input  logic        rst,
     input  logic        flush,
+    input  logic        off,
 
     input  logic        i_req,
     input  logic [12:0] i_addr,
@@ -81,7 +83,7 @@ module icache #(
 
     icache_storage u_storage (
         .clk             (clk),
-        .reset           (rst | flush),      // flush clears every line
+        .reset           (rst | flush | off),   // flush or off clears every line
         .index           (storage_index),
 
         .sec0_write_en   (sec0_write_en),
@@ -104,7 +106,7 @@ module icache #(
     logic hit0, hit1, cache_hit, hit_way;
     assign hit0      = sec0_valid && (sec0_tag == tag);
     assign hit1      = sec1_valid && (sec1_tag == tag);
-    assign cache_hit = hit0 || hit1;
+    assign cache_hit = off ? 1'b0 : (hit0 || hit1);
     assign hit_way   = hit1;
 
     // ---------------- FSM ----------------
