@@ -20,4 +20,4 @@ lint_off -rule UNUSEDSIGNAL -file "*rtl/core/imm_gen.sv" -match "*'inst'*"
 lint_off -rule UNUSEDSIGNAL -file "*rtl/bootloader.sv" -match "*'word_buf'*"
 
 // soc.sv doesnt have cache so chicken bit from bootloader doesn't drive anything
-lint_off -rule PINCONNECTEMPTY -file "*rtl/soc.sv"
+lint_off -rule PINCONNECTEMPTY -file "*rtl/soc.sv" -match "*'chicken'*"
