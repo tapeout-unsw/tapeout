@@ -46,7 +46,7 @@ module single_core_icache_harness (
     );
 
     icache u_cache (
-        .clk(clk), .rst(rst), .flush(flush), .i_req(i_req),
+        .clk(clk), .rst(rst), .flush(flush), .off(1'b0), .i_req(i_req),
         .i_addr(i_addr), .i_valid(i_valid), .i_rdata(i_rdata),
         .ic_req(ic_req), .ic_addr(ic_addr), .ic_wdata(ic_wdata),
         .ic_wstrb(ic_wstrb), .ic_gnt(ic_gnt), .bus_rdata(bus_rdata)
