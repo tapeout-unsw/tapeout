@@ -3,7 +3,7 @@
 // memory one word per bus write, then releases the cores.
 //
 // Protocol (host -> board), little-endian:
-//   1. 4 bytes : word count N
+//   1. 4 bytes : bits 27:0 are the count and bits 31:28 are the chicken bits
 //   2. N*4 bytes : the memory image, one 32-bit word per 4 bytes, written
 //                  from address 0
 //
@@ -24,7 +24,7 @@ module bootloader (
     output logic [31:0] boot_wdata,
     output logic        core_run,       // high once loading is complete
     output logic        loading,        // high while receiving
-    output logic [3:0]  chicken         // Control for cache chicken bits       
+    output logic [3:0]  chicken         // Control for cache chicken bits
 );
     typedef enum logic [1:0] {GET_LEN, GET_PROG, DONE} state_t;
     state_t state;
