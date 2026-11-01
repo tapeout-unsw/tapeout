@@ -1,5 +1,15 @@
 # KV260 FPGA project
 
+There are two separate configurations here:
+
+- [`host_app`](host_app/README.md): the original, board-tested v1 setup and its
+  FPGA build sources in this directory.
+- [`host_app_v2`](host_app_v2/START_HERE.md): the experimental chicken-bit and
+  data-cache runner. Its separate [v2 FPGA sources](v2/README.md) use a snapshot
+  of the newer processor RTL; its build and bitstream do not replace v1 files.
+
+The sections below describe the original v1 build.
+
 This flow places the dual-core tapeout SoC in the KV260 programmable logic and
 lets the Linux application on the processing system load and test it.
 

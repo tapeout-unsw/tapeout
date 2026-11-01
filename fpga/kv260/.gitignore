@@ -3,3 +3,8 @@
 /host_app/**/__pycache__/
 /host_app/*.egg-info/
 /host_app/src/*.egg-info/
+/host_app_v2/.venv/
+/host_app_v2/vendor/
+/host_app_v2/toolchain/
+/host_app_v2/**/__pycache__/
+/v2/build/
