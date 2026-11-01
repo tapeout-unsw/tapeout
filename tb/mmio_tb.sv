@@ -18,6 +18,8 @@ module mmio_tb;
     logic        tx_busy = 0;
     logic        done, dbg_lock;
     logic [1:0]  dbg_exit;
+    logic [7:0] rx_data = 0;
+    logic rx_valid = 0, console_en, core1_hold;
 
     mmio dut (.*);
 
@@ -109,9 +111,33 @@ module mmio_tb;
         access(A_EXIT, 1, 0, 1); check(dbg_exit == 2'b11 && done, "both exits raise done");
         access(A_EXIT, 0, 0, 0); check(got == 3, "EXIT reads back both flags");
 
-        // unused addresses read 0
+        // Empty RX and default control preserve the old boot behavior.
         access(3'd6, 0, 0, 0); check(got == 0, "address 6 reads 0");
         access(3'd7, 0, 0, 0); check(got == 0, "address 7 reads 0");
+
+        access(3'd7, 1, 3, 1);
+        check(!console_en && !core1_hold, "core 1 cannot claim console or reset itself");
+        access(3'd7, 1, 3, 0);
+        check(console_en && core1_hold, "core 0 claims console and holds core 1");
+        access(3'd7, 0, 0, 0); check(got == 3, "control reads back");
+        for (int i = 0; i < 17; i++) begin
+            rx_data = 8'(i + 128); rx_valid = 1;
+            @(negedge clk);
+        end
+        rx_valid = 0;
+        access(A_STATUS, 0, 0, 0); check(got == 6, "RX ready and overflow flags");
+        // A pop and push on a full FIFO retain all sixteen bytes in order.
+        rx_valid = 1; rx_data = 8'hf0;
+        access(3'd6, 0, 0, 0); check(got == 128, "simultaneous full FIFO pop and push");
+        rx_valid = 0;
+        for (int i = 1; i < 16; i++) begin
+            access(3'd6, 0, 0, 0); check(got == 32'(i + 128), "FIFO byte order");
+        end
+        access(3'd6, 0, 0, 0); check(got == 8'hf0, "full FIFO accepted replacement byte");
+        access(A_STATUS, 0, 0, 0); check(got == 4, "overflow stays set after FIFO drains");
+        access(3'd7, 1, 1, 0);
+        check(console_en && !core1_hold, "core 1 released without releasing console");
+        access(A_STATUS, 0, 0, 0); check(got == 0, "control write clears overflow");
 
         // core_run low clears lock and exit, ready for the next program
         access(A_LOCK, 0, 0, 0);
@@ -119,6 +145,7 @@ module mmio_tb;
         core_run = 0;
         @(negedge clk);
         check(!dbg_lock && !done && dbg_exit == 2'b00, "core_run low clears lock and exit");
+        check(!console_en && !core1_hold, "reload releases console and core 1 control");
         core_run = 1;
         access(A_LOCK, 0, 0, 0); check(got == 0, "lock free after the reload");
 

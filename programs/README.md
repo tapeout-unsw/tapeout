@@ -1,3 +1,87 @@
+# Programs
+
+## Resident OS
+
+`os.S` runs a UART shell continuously on core 0. Core 1 executes the RV32E
+instruction words entered in the shell. The OS fits the default 1 KiB SRAM
+and also runs with 2 KiB SRAM, with or without data caches.
+
+Build and test inside `nix develop`:
+
+```sh
+make hex/os.hex
+make test-os
+make test-os NREGS=32 DCACHE=1 RAW=11
+```
+
+Reset the board, then upload the OS and open its console:
+
+```sh
+python3 os_console.py /dev/ttyUSB0 --image bin/os.bin
+```
+
+The helper uses Python's standard library on Linux/macOS. It sends the existing
+binary boot protocol, a little-endian word count followed by the binary image,
+then opens a line-oriented terminal at 115200 baud, 8N1. Your terminal provides
+local echo and line editing. To reconnect to an already running OS, omit
+`--image`. With another serial terminal, enable local echo and send CR or LF.
+Wait for `hex> ` before entering instructions.
+
+Enter eight-digit hexadecimal instruction words separated by spaces or tabs.
+Press Enter to execute the line at `0x300` on core 1. For example:
+
+```text
+hex> 02a00513 3ea02e23
+```
+
+This executes `addi a0, zero, 42` and `sw a0, 0x3fc(zero)` on core 1. The OS
+appends `ret`. After the snippet returns, core 1 parks and core 0 keeps reading
+the console. The shell does not print register or memory results. A payload
+may use UART MMIO for output, but it must coordinate with the shell's output.
+
+Each new hex line replaces the previous job. The first hex digit stops core 1
+and flushes its caches before the OS writes instructions. Send `!` to stop an
+infinite loop or cancel input. The serial helper is line buffered, so type `!`
+and press Enter; the shell ignores the trailing newline. An empty line does nothing. Invalid characters, incomplete words, more than
+47 words, and RX overflow produce `ERR` and leave core 1 stopped. An invalid
+line is discarded through its newline. The shell accepts upper/lowercase hex
+and CR, LF, or CRLF. Do not include `0x` prefixes or comments.
+
+The memory layout is fixed for both RAM sizes:
+
+| Address | Use |
+|---|---|
+| `0x000..0x2ff` | OS code, strings and job state |
+| `0x300..0x3bb` | Up to 47 payload instructions |
+| `0x3bc..0x3bf` | Space for the appended return instruction |
+| `0x3c0..0x3ff` | 64-byte payload stack, initial `sp = 0x400` |
+
+Core 1 starts at `0x300` with `ra` pointing to the OS worker's return handler.
+Save and restore `ra` if your payload calls functions. Use only `x0..x15` on
+RV32E. Other registers contain worker startup values and are not an ABI.
+Branches and jumps must target the payload's actual addresses. The hardware
+has no memory protection, so payload stores can overwrite the OS and core 1
+can access peripherals. The resident-shell guarantee assumes the payload
+respects the reserved memory and UART RX registers.
+
+Software claims UART RX by writing `3` to `0x101c`. While bit 0 is set, the
+bootloader ignores incoming bytes and a 16-byte RX FIFO supplies software.
+Write `1` to release core 1 while keeping the console. Only core 0 can change
+this register. Board reset restores binary boot mode. Existing programs that
+never claim RX retain the original back-to-back binary reload behavior.
+
+| Register | Meaning |
+|---|---|
+| `0x1004` | Bit 0 TX busy, bit 1 RX available, bit 2 sticky RX overflow |
+| `0x1018` | Read pops one RX byte, or returns zero when empty |
+| `0x101c` | Bit 0 console owns RX, bit 1 core 1 reset and cache flush |
+
+A control write clears RX overflow. Core reset through the bootloader clears
+the FIFO and control bits. This shell runs indefinitely, so use `make test-os`
+instead of `make run PROGRAM=os`, which waits for both cores to exit.
+
+## Assembly checks
+
 ```sh
 # Build all assembly programs
 make

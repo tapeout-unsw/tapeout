@@ -11,6 +11,9 @@
 // bytes arriving are interpreted as a new word count, which drops core_run
 // (resetting the cores) and starts a fresh load. That makes it possible to run
 // a suite of test programs back to back without touching the reset button.
+// While console_en is high, software owns RX: incoming bytes go to software,
+// which may load and run code itself, and cannot trigger another binary load.
+// console_en is only ever high while the cores run, i.e. in DONE.
 // 
 // Chicken bit control (4 bits):
 // 1 = off: [3] ic0 [2] ic1 [1] dc0 [0] dc1
@@ -19,6 +22,7 @@ module bootloader (
     input  logic        rst,
     input  logic [7:0]  rx_data,
     input  logic        rx_valid,
+    input  logic        console_en,     // software owns RX after boot
     output logic        boot_req,       // one-cycle write pulse per word
     output logic [12:0] boot_addr,      // byte address, word aligned
     output logic [31:0] boot_wdata,
@@ -57,7 +61,7 @@ module bootloader (
         end else begin
             boot_req <= 1'b0;
 
-            if (rx_valid) begin
+            if (rx_valid && !console_en) begin
                 word_buf <= full_word;
 
                 if (byte_idx == 2'd3) begin

@@ -78,6 +78,7 @@ module core_bus_harness #(
     bootloader u_boot (
         .clk(clk), .rst(rst),
         .rx_data(rx_data), .rx_valid(rx_valid),
+        .console_en(1'b0),
         .boot_req(bl_req), .boot_addr(bl_addr), .boot_wdata(bl_wdata),
         .core_run(core_run), .loading(bl_loading)
     );
@@ -215,6 +216,7 @@ module core_bus_harness #(
         .clk(clk), .rst(rst), .core_run(mmio_run),
         .m_en(m_en), .m_addr(m_addr), .m_we(m_we), .m_wdata(m_wdata), .m_core(m_core),
         .m_rdata(m_rdata),
+        .rx_data(8'd0), .rx_valid(1'b0), .console_en(), .core1_hold(),
         .tx_start(tx_start), .tx_data(tx_data), .tx_busy(tx_busy),
         .done(done), .dbg_lock(), .dbg_exit()
     );
