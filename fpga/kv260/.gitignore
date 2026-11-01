@@ -1,0 +1,5 @@
+/build/
+/host_app/.venv/
+/host_app/**/__pycache__/
+/host_app/*.egg-info/
+/host_app/src/*.egg-info/

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tapeout RV32E Runner</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">KV260 · PS → PL</p>
+      <h1>RV32E program runner</h1>
+      <p>Compile C or assembly on the ARM processing system, or load an existing raw binary.</p>
+    </header>
+
+    <section class="panel controls">
+      <div class="mode" role="radiogroup" aria-label="Input type">
+        <label><input type="radio" name="mode" value="source" checked> Compile source</label>
+        <label><input type="radio" name="mode" value="binary"> Load binary unchanged</label>
+      </div>
+      <label class="file-box">
+        <span id="file-prompt">Choose a .c or .S file</span>
+        <input id="program" type="file" accept=".c,.s,.S" required>
+      </label>
+      <label class="timeout">Run timeout <input id="timeout" type="number" value="5" min="0.1" max="300" step="0.1"> seconds</label>
+      <button id="run">Compile and run</button>
+      <div id="summary" class="summary">Idle</div>
+    </section>
+
+    <section class="status-grid" aria-label="Processor state">
+      <div><span>core_run</span><strong id="core-run">—</strong></div>
+      <div><span>exit[1:0]</span><strong id="exit-bits">—</strong></div>
+      <div><span>lock</span><strong id="lock">—</strong></div>
+      <div><span>done</span><strong id="done">—</strong></div>
+    </section>
+
+    <section class="terminal-panel">
+      <div class="terminal-title"><span>UART console</span><button id="clear" class="quiet">Clear</button></div>
+      <pre id="uart" class="terminal" aria-live="polite"></pre>
+    </section>
+
+    <details>
+      <summary>Compiler and loader log</summary>
+      <pre id="log" class="terminal log"></pre>
+    </details>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
