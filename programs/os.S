@@ -1,20 +1,31 @@
-# Resident UART monitor on core 0. Core 1 runs words entered at the prompt.
-# No stack is used by the monitor. See README.md for the payload ABI.
+# Resident UART monitor on SHELL_CORE. The other core runs words entered at
+# the prompt. No stack is used by the monitor. See README.md for the payload ABI.
+.ifndef SHELL_CORE
+.equ SHELL_CORE, 0              # override with: as --defsym SHELL_CORE=1
+.endif
 .equ UART,    0x1000
 .equ PAYLOAD, 0x300
 .equ LIMIT,   0x3bc             # reserve one RET and 64 bytes of stack
+
+# CONTROL (0x101C) values. HOLD1 is bit 2 and HOLD0 is bit 1.
+.equ RX_CLAIM,  1
+.equ HOLD_WORKER, 2 << (1 - SHELL_CORE)
+.equ OVF_CLR,   8
+.equ CTRL_RUN,  RX_CLAIM                  # keep RX, worker running
+.equ CTRL_STOP, RX_CLAIM | HOLD_WORKER    # keep RX, worker held and flushed
 
 .section .text
 .globl _start
 _start:
     li   s0, UART
     lw   t0, 12(s0)
-    bnez t0, worker
-    li   t0, 3                # claim RX, hold core 1 and flush its caches
+    li   t1, SHELL_CORE
+    bne  t0, t1, worker
+    li   t0, CTRL_STOP | OVF_CLR  # claim RX, hold the worker core
     sw   t0, 28(s0)
     la   a0, banner
     jal  puts
-    li   a5, 0                # release core 1 after the next prompt
+    li   a5, 0                # release the worker after the next prompt
 reset_line:
     li   s1, PAYLOAD
     li   a2, 0                # word accumulator
@@ -25,13 +36,15 @@ reset_line:
     # Start the job only after the prompt, so its UART output does not race ours.
     beqz a5, receive
     li   a5, 0
-    li   t0, 1
-    sw   t0, 28(s0)           # keep console, release core 1 from reset
+    li   t0, CTRL_RUN
+    sw   t0, 28(s0)           # keep RX, release the worker from reset
 receive:
     lw   t0, 4(s0)
     andi t1, t0, 4
     beqz t1, 1f
     li   a4, 1                # never execute a line with dropped bytes
+    li   t1, CTRL_STOP | OVF_CLR
+    sw   t1, 28(s0)           # stop the worker and acknowledge the overflow
 1:  andi t0, t0, 2
     beqz t0, receive
     lw   a0, 24(s0)
@@ -58,15 +71,10 @@ receive:
 digit:
     li   t0, 8
     bgeu a3, t0, invalid
-    # The first digit of a line stops the previous job before its instructions
-    # are edited. Write CONTROL only once: each write clears RX overflow, so a
-    # write per digit could hide bytes dropped after the status poll.
-    bnez a3, 2f
-    li   t0, PAYLOAD
-    bne  s1, t0, 2f
-    li   t0, 3
+    # Stop the previous job before editing its instructions.
+    li   t0, CTRL_STOP
     sw   t0, 28(s0)
-2:  slli a2, a2, 4
+    slli a2, a2, 4
     or   a2, a2, t1
     addi a3, a3, 1
     j    receive
@@ -87,7 +95,7 @@ launch:
     la   t0, job
     li   t1, 1
     sw   t1, 0(t0)
-    li   a5, 1             # release core 1 once the prompt is out
+    li   a5, 1             # release the worker once the prompt is out
     j    reset_line
 invalid:
     li   a4, 1
@@ -96,7 +104,7 @@ bad_line:
     la   a0, error
     jal  puts
 cancel:
-    li   t0, 3
+    li   t0, CTRL_STOP
     sw   t0, 28(s0)
     j    reset_line
 
@@ -145,7 +153,7 @@ park:
 .section .data
 .balign 4
 job:    .word 0               # 0 boot, 1 launched, 2 returned
-banner: .asciz "BOB OS core0\r\n8-digit hex words run on core1; ! stops\r\n"
+banner: .asciz "BOB OS\r\n8-digit hex words run on the other core; ! stops\r\n"
 prompt: .asciz "\r\nhex> "
 error:  .asciz "\r\nERR"
 .balign 4

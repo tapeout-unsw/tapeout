@@ -97,7 +97,7 @@ module os_tb #(
         for (int i = 0; i < count; i++) send_word(image[i]);
         wait_prompt();
         loaded = 1;
-        if (!dut.console_en || !dut.core1_hold) $fatal(1, "OS did not claim console");
+        if (!dut.rx_claim || dut.core_hold != 2'b10) $fatal(1, "OS did not claim RX and hold core 1");
 
         send_text("02a00513 3ea02e23\r\n");
         wait_prompt(); expect_result(42, 1);
@@ -110,7 +110,7 @@ module os_tb #(
         for (int i = 0; i < 48; i++) send_text("00000013 ");
         send_text("\n"); wait_prompt(1); expect_result(43, 2);
         send_text("0000006f\n"); wait_prompt();
-        if (dut.core1_hold) $fatal(1, "loop was not launched");
+        if (dut.core_hold[1]) $fatal(1, "loop was not launched");
         begin
             int before_stop;
             before_stop = payload_fetches;
@@ -118,7 +118,7 @@ module os_tb #(
             if (payload_fetches <= before_stop) $fatal(1, "core 1 loop did not run");
         end
         send_text("!"); wait_prompt();
-        if (!dut.core1_hold) $fatal(1, "stop did not hold core 1");
+        if (!dut.core_hold[1]) $fatal(1, "stop did not hold core 1");
         send_text("02d00513 3ea02e23\n");
         wait_prompt(); expect_result(45, 3);
         // A new line without ! must stop a running loop and replace it.

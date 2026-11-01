@@ -278,7 +278,7 @@ in the simulation settings.
 | `0x1010` | EXIT | bits 1:0 | sets this core's exit bit |
 | `0x1014` | LOCK_PEEK | the lock bit, no side effect | ignored |
 | `0x1018` | UART_RX | pop one received byte, zero if empty | ignored |
-| `0x101C` | CONTROL | bit 0 console RX, bit 1 core 1 reset/flush | core 0 sets bits 1:0 and clears RX overflow |
+| `0x101C` | CONTROL | bit 0 RX claim, bits 2:1 core 1/core 0 held | either core: RX claim, hold the other core, bit 3 clears RX overflow |
 
 UART_STATUS also reports RX available in bit 1 and sticky RX overflow in bit 2.
 The RX FIFO holds 16 bytes and receives only while CONTROL bit 0 is set.
@@ -389,7 +389,7 @@ two exit bits; both clear while the cores are held in reset (`core_run` low).
 | 4 | `0x1010` | EXIT | `exit[1:0]` | `exit[m_core] = 1` |
 | 5 | `0x1014` | LOCK_PEEK | lock bit, no side effect | ignored |
 | 6 | `0x1018` | UART_RX | pop one RX byte | ignored |
-| 7 | `0x101C` | CONTROL | bits 1:0 | core 0 controls console RX and core 1 reset/flush |
+| 7 | `0x101C` | CONTROL | `{core_hold, rx_claim}` | `rx_claim`, the other core's `core_hold` bit, bit 3 clears overflow |
 
 `done = exit[0] & exit[1]`.
 

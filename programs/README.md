@@ -4,7 +4,9 @@
 
 `os.S` runs a UART shell continuously on core 0. Core 1 executes the RV32E
 instruction words entered in the shell. The OS fits the default 1 KiB SRAM
-and also runs with 2 KiB SRAM, with or without data caches.
+and also runs with 2 KiB SRAM, with or without data caches. The hardware does
+not fix these roles: assembling with `--defsym SHELL_CORE=1` runs the shell on
+core 1 and payloads on core 0. The text below describes the default build.
 
 Build and test inside `nix develop`:
 
@@ -27,11 +29,10 @@ local echo and line editing. To reconnect to an already running OS, omit
 `--image`. With another serial terminal, enable local echo and send CR or LF.
 Wait for `hex> ` before entering instructions.
 
-Enter eight-digit hexadecimal instruction words separated by spaces or tabs.
-Press Enter to execute the line at `0x300` on core 1. For example:
+Below should output 'A' from UART:
 
 ```text
-hex> 02a00513 3ea02e23
+hex> 000012b7 0042a303 00137313 fe031ce3 04100313 0062a023
 ```
 
 This executes `addi a0, zero, 42` and `sw a0, 0x3fc(zero)` on core 1. The OS
@@ -64,20 +65,30 @@ has no memory protection, so payload stores can overwrite the OS and core 1
 can access peripherals. The resident-shell guarantee assumes the payload
 respects the reserved memory and UART RX registers.
 
-Software claims UART RX by writing `3` to `0x101c`. While bit 0 is set, the
-bootloader ignores incoming bytes and a 16-byte RX FIFO supplies software.
-Write `1` to release core 1 while keeping the console. Only core 0 can change
-this register. Board reset restores binary boot mode. Existing programs that
-never claim RX retain the original back-to-back binary reload behavior.
+The hardware support is generic: any program on either core can claim UART RX
+and hold or release the other core. While CONTROL bit 0 is set, the bootloader
+ignores incoming bytes and a 16-byte RX FIFO supplies software. Board reset
+restores binary boot mode. Existing programs that never claim RX retain the
+original back-to-back binary reload behavior.
 
 | Register | Meaning |
 |---|---|
 | `0x1004` | Bit 0 TX busy, bit 1 RX available, bit 2 sticky RX overflow |
 | `0x1018` | Read pops one RX byte, or returns zero when empty |
-| `0x101c` | Bit 0 console owns RX, bit 1 core 1 reset and cache flush |
+| `0x101c` | CONTROL, writable by either core (bits below) |
 
-A control write clears RX overflow. Core reset through the bootloader clears
-the FIFO and control bits. This shell runs indefinitely, so use `make test-os`
+| CONTROL bit | Name | Meaning |
+|---|---|---|
+| 0 | `RX_CLAIM` | Software owns RX instead of the bootloader |
+| 1 | `HOLD0` | Core 0 held in reset with its caches flushed |
+| 2 | `HOLD1` | Core 1 held in reset with its caches flushed |
+| 3 | `OVF_CLR` | Write 1 to clear RX overflow; reads 0 |
+
+A core's write to its own HOLD bit is ignored, so a core cannot stop itself
+and both cores can never be held at once. A released core restarts at address
+0, so software chooses its role by reading CORE_ID. The default shell writes
+`5` to claim RX and hold core 1, `1` to release it, and `13` to also clear
+overflow. Core reset through the bootloader clears the FIFO and CONTROL. This shell runs indefinitely, so use `make test-os`
 instead of `make run PROGRAM=os`, which waits for both cores to exit.
 
 ## Assembly checks

@@ -19,7 +19,8 @@ module mmio_tb;
     logic        done, dbg_lock;
     logic [1:0]  dbg_exit;
     logic [7:0] rx_data = 0;
-    logic rx_valid = 0, console_en, core1_hold;
+    logic rx_valid = 0, rx_claim;
+    logic [1:0] core_hold;
 
     mmio dut (.*);
 
@@ -115,11 +116,15 @@ module mmio_tb;
         access(3'd6, 0, 0, 0); check(got == 0, "address 6 reads 0");
         access(3'd7, 0, 0, 0); check(got == 0, "address 7 reads 0");
 
-        access(3'd7, 1, 3, 1);
-        check(!console_en && !core1_hold, "core 1 cannot claim console or reset itself");
-        access(3'd7, 1, 3, 0);
-        check(console_en && core1_hold, "core 0 claims console and holds core 1");
-        access(3'd7, 0, 0, 0); check(got == 3, "control reads back");
+        // Either core may write CONTROL, but only the other core's HOLD bit.
+        access(3'd7, 1, 7, 1);
+        check(rx_claim && core_hold == 2'b01, "core 1 claims RX and holds only core 0");
+        access(3'd7, 0, 0, 0); check(got == 3, "control reads back core 1's write");
+        access(3'd7, 1, 1, 1);
+        check(rx_claim && core_hold == 2'b00, "core 1 releases core 0");
+        access(3'd7, 1, 7, 0);
+        check(rx_claim && core_hold == 2'b10, "core 0 claims RX and holds only core 1");
+        access(3'd7, 0, 0, 0); check(got == 5, "control reads back core 0's write");
         for (int i = 0; i < 17; i++) begin
             rx_data = 8'(i + 128); rx_valid = 1;
             @(negedge clk);
@@ -136,8 +141,11 @@ module mmio_tb;
         access(3'd6, 0, 0, 0); check(got == 8'hf0, "full FIFO accepted replacement byte");
         access(A_STATUS, 0, 0, 0); check(got == 4, "overflow stays set after FIFO drains");
         access(3'd7, 1, 1, 0);
-        check(console_en && !core1_hold, "core 1 released without releasing console");
-        access(A_STATUS, 0, 0, 0); check(got == 0, "control write clears overflow");
+        check(rx_claim && core_hold == 2'b00, "core 1 released without releasing RX");
+        access(A_STATUS, 0, 0, 0); check(got == 4, "control write without OVF_CLR keeps overflow");
+        access(3'd7, 1, 9, 0);
+        access(A_STATUS, 0, 0, 0); check(got == 0, "OVF_CLR clears overflow");
+        access(3'd7, 0, 0, 0); check(got == 1, "OVF_CLR reads 0, RX stays claimed");
 
         // core_run low clears lock and exit, ready for the next program
         access(A_LOCK, 0, 0, 0);
@@ -145,7 +153,7 @@ module mmio_tb;
         core_run = 0;
         @(negedge clk);
         check(!dbg_lock && !done && dbg_exit == 2'b00, "core_run low clears lock and exit");
-        check(!console_en && !core1_hold, "reload releases console and core 1 control");
+        check(!rx_claim && core_hold == 2'b00, "reload releases RX and both holds");
         core_run = 1;
         access(A_LOCK, 0, 0, 0); check(got == 0, "lock free after the reload");
 

@@ -11,10 +11,15 @@
 //   4       0x1010   EXIT         bits 1:0 = exit            exit[m_core] = 1
 //   5       0x1014   LOCK_PEEK    bit 0 = lock (optional)    ignored
 //   6       0x1018   UART_RX      pop oldest RX byte         ignored
-//   7       0x101C   CONTROL      bits 1:0 below             core 0 only
-// UART_STATUS: bit 0 TX busy, bit 1 RX ready, bit 2 RX overflow.
-// CONTROL: bit 0 claims RX from bootloader, bit 1 holds core 1 in reset and
-// flushes its caches. A CONTROL write clears sticky RX overflow.
+//   7       0x101C   CONTROL      bits 2:0 below             bits 3:0 below
+// UART_STATUS: bit 0 TX busy, bit 1 RX ready, bit 2 RX overflow (sticky).
+// CONTROL, writable by either core:
+//   bit 0  RX_CLAIM  software owns RX; the bootloader ignores incoming bytes
+//   bit 1  HOLD0     core 0 held in reset with its caches flushed
+//   bit 2  HOLD1     core 1 held in reset with its caches flushed
+//   bit 3  OVF_CLR   write 1 to clear RX overflow; reads 0
+// A core's write to its own HOLD bit is ignored, so a core never stops itself
+// and the two cores can never both be held.
 //
 // m_rdata is registered: it carries the read result of the previous cycle's
 // access. lock and exit clear while core_run is low. done = exit[0] & exit[1].
@@ -36,8 +41,8 @@ module mmio (
     input  logic        tx_busy,
     input  logic [7:0]  rx_data,
     input  logic        rx_valid,
-    output logic        console_en,
-    output logic        core1_hold,
+    output logic        rx_claim,
+    output logic [1:0]  core_hold,
 
     output logic        done,
     output logic        dbg_lock,
@@ -67,23 +72,25 @@ module mmio (
     logic [4:0] rx_count;
     logic rx_overflow, rx_push, rx_pop;
     assign rx_pop = rd && m_addr == 3'd6 && rx_count != 0;
-    assign rx_push = rx_valid && console_en && (rx_count < 16 || rx_pop);
+    assign rx_push = rx_valid && rx_claim && (rx_count < 16 || rx_pop);
 
     always_ff @(posedge clk) begin
         if (rst || !core_run) begin
-            console_en <= 0;
-            core1_hold <= 0;
+            rx_claim <= 0;
+            core_hold <= 0;
             rx_head <= 0;
             rx_tail <= 0;
             rx_count <= 0;
             rx_overflow <= 0;
         end else begin
-            if (wr && m_addr == 3'd7 && !m_core) begin
-                console_en <= m_wdata[0];
-                core1_hold <= m_wdata[1];
-                rx_overflow <= 0;
+            if (wr && m_addr == 3'd7) begin
+                rx_claim <= m_wdata[0];
+                // Each core may hold only the other one.
+                if (m_core) core_hold[0] <= m_wdata[1];
+                else        core_hold[1] <= m_wdata[2];
+                if (m_wdata[3]) rx_overflow <= 0;
             end
-            if (rx_valid && console_en && !rx_push) rx_overflow <= 1;
+            if (rx_valid && rx_claim && !rx_push) rx_overflow <= 1;
             if (rx_push) begin
                 rx_fifo[rx_tail] <= rx_data;
                 rx_tail <= rx_tail + 1'b1;
@@ -107,7 +114,7 @@ module mmio (
             3'd4:    rd_val = {6'd0, exit_q};
             3'd5:    rd_val = {7'd0, lock};
             3'd6:    rd_val = rx_count != 0 ? rx_fifo[rx_head] : 8'd0;
-            3'd7:    rd_val = {6'd0, core1_hold, console_en};
+            3'd7:    rd_val = {5'd0, core_hold, rx_claim};
             default: rd_val = 0;
         endcase
     end
