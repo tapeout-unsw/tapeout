@@ -12,6 +12,7 @@ RTL   := $(sort $(wildcard rtl/*.sv rtl/*/*.sv))
 BUILD := build
 
 NREGS ?= 16
+DCACHE ?= 0
 TEST  ?= all
 BLOCK ?= all
 SYNTH_FLAGS ?= -noabc
@@ -24,10 +25,17 @@ PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 # written yet" until its owner writes them; add the block here at that point
 # and `make ci` (and CI) will require it to pass.
 # Blocks: arbiter addr_decode icache sram_mem mmio
-UNIT_GATED := arbiter mmio
+UNIT_GATED := arbiter mmio addr_decode
 
-.PHONY: help env lint synth synth-full check-top test test-core test-soc test-all \
-        test-unit test-unit-gated test-cocotb waves ci clean
+# cocotb block tests, one folder per block under sim/cocotb/. They need the
+# virtualenv: python -m pip install -r sim/requirements.txt. As with
+# UNIT_GATED, add a block here once its RTL passes its tests; `make ci` and CI
+# then require it to stay green.
+# Blocks: sram_mem icache dcache dcache_fsm dcache_snoop
+COCOTB_GATED := sram_mem icache dcache dcache_fsm dcache_snoop
+
+.PHONY: help env lint synth synth-full check-top test test-core test-soc test-soc-top test-all \
+        test-unit test-unit-gated test-cocotb test-cocotb-gated waves ci clean
 
 help:
 	@echo "make env                  check the toolchain A install"
@@ -38,9 +46,12 @@ help:
 	@echo "make test                 core and SoC program tests at NREGS=$(NREGS)"
 	@echo "make test-core            core tests     (NREGS=16|32, TEST=all|<name>)"
 	@echo "make test-soc             SoC boot tests (NREGS=16|32, TEST=all|sample|<name>)"
-	@echo "make test-all             core and SoC tests at both register counts"
+	@echo "make test-soc-top         dual-core soc_top tests (NREGS=16|32, DCACHE=0|1, TEST=all|<name>)"
+	@echo "make test-all             core, SoC and soc_top tests at both register counts, soc_top with and without D-cache"
 	@echo "make test-unit            block unit testbenches (BLOCK=all|arbiter|addr_decode|icache|sram_mem|mmio)"
 	@echo "make test-unit-gated      only the unit testbenches listed in UNIT_GATED"
+	@echo "make test-cocotb          cocotb block tests (BLOCK=all|icache|dcache|dcache_fsm|dcache_snoop|sram_mem; SEED=<n>, WAVES=1)"
+	@echo "make test-cocotb-gated    only the cocotb blocks listed in COCOTB_GATED"
 	@echo "make test-cocotb          cocotb unit tests (sim/cocotb/sram_mem)"
 	@echo "make waves TEST=<name>    run one core test and dump a VCD"
 	@echo "make ci                   everything CI requires"
@@ -93,12 +104,17 @@ test-core:
 test-soc:
 	@./sim/run_soc.sh $(TEST) $(NREGS)
 
+test-soc-top:
+	@SIM_TOP=soc_top_tb DCACHE=$(DCACHE) ./sim/run_verilator.sh $(NREGS) $(TEST)
+
 test: test-core test-soc
 
 test-all:
 	@for n in 16 32; do \
 	  $(MAKE) --no-print-directory test-core NREGS=$$n TEST=all || exit 1; \
 	  $(MAKE) --no-print-directory test-soc  NREGS=$$n TEST=all || exit 1; \
+	  $(MAKE) --no-print-directory test-soc-top NREGS=$$n DCACHE=0 TEST=all || exit 1; \
+	  $(MAKE) --no-print-directory test-soc-top NREGS=$$n DCACHE=1 TEST=all || exit 1; \
 	done
 
 test-unit:
@@ -111,18 +127,24 @@ test-unit-gated:
 	  for b in $(UNIT_GATED); do ./sim/run_unit.sh $$b || exit 1; done; \
 	fi
 
-# cocotb (Python) unit tests. One-off setup from the repository root:
+# cocotb (Python) tests. One-off setup from the repository root:
 #   python3 -m venv .venv && .venv/bin/pip install -r sim/requirements.txt
-# The level-2 tests in sim/cocotb/integration are parked and not run here.
 test-cocotb:
-	@$(PYTHON) -m pytest -q sim/cocotb/sram_mem
+	@$(PYTHON) -m pytest -q sim/cocotb$(if $(filter-out all,$(BLOCK)),/$(BLOCK))
+
+test-cocotb-gated:
+	@if [ -z "$(strip $(COCOTB_GATED))" ]; then \
+	  echo "no cocotb blocks gated yet (see COCOTB_GATED in the Makefile)"; \
+	else \
+	  $(PYTHON) -m pytest -q $(addprefix sim/cocotb/,$(COCOTB_GATED)) || exit 1; \
+	fi
 
 waves:
 	@if [ "$(TEST)" = all ]; then echo "usage: make waves TEST=<name> [NREGS=16|32]"; exit 2; fi
 	@TRACE=1 ./sim/run_verilator.sh $(NREGS) $(TEST)
 	@echo "open with: surfer sim/obj_dir/core_mc_tb_$(NREGS)/$(TEST).vcd"
 
-ci: env lint synth check-top test-all test-unit-gated test-cocotb
+ci: env lint synth check-top test-all test-unit-gated test-cocotb-gated
 
 clean:
 	rm -rf sim/obj_dir $(BUILD)

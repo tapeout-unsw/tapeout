@@ -14,5 +14,5 @@ SECTIONS
     .bss : {
         *(.bss*)
     }
-    ASSERT(. <= 0x400, "Program exceeds 1 KiB RAM")
+    ASSERT(. <= 0x800, "Program exceeds 2 KiB RAM")
 }

@@ -24,8 +24,18 @@ import cocotb
 import pytest
 from cocotb.triggers import ClockCycles, FallingEdge, ReadOnly, RisingEdge
 
-from ref_model import (HERE, LB, LBU, LH, LHU, LW, MASK32, ROOT, SB, SH, SW, ByteMemory,
-                        as_int, env_int, load_value, run_cocotb, start_clock, store_lanes)
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[3]
+
+sys.path.insert(0, str(HERE.parent))
+
+from ref_model import (
+    LB, LBU, LH, LHU, LW, MASK32, SB, SH, SW, ByteMemory,
+    as_int, env_int, load_value, run_cocotb, start_clock, store_lanes,
+)
 
 LOAD_NAMES = {LB: "lb", LH: "lh", LW: "lw", LBU: "lbu", LHU: "lhu"}
 STORE_NAMES = {SB: "sb", SH: "sh", SW: "sw"}
