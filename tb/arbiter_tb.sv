@@ -14,6 +14,7 @@ module arbiter_tb;
     logic        d1_req = 0;    logic [12:0] d1_addr = 0;   logic [31:0] d1_wdata = 0;   logic [3:0] d1_wstrb = 0;   logic d1_gnt;
     logic        ic0_req = 0;   logic [12:0] ic0_addr = 0;  logic [31:0] ic0_wdata = 0;  logic [3:0] ic0_wstrb = 0;  logic ic0_gnt;
     logic        ic1_req = 0;   logic [12:0] ic1_addr = 0;  logic [31:0] ic1_wdata = 0;  logic [3:0] ic1_wstrb = 0;  logic ic1_gnt;
+    logic        d0_atomic = 0, d1_atomic = 0;   // atomics are not exercised here
     logic        b_valid;
     logic [12:0] b_addr;
     logic [31:0] b_wdata;

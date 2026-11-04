@@ -35,13 +35,14 @@ module core_mc_tb;
     wire [3:0]  d_wstrb;
     wire        i_valid, d_gnt;
     reg  [31:0] i_rdata, d_rdata;
+    wire        d_atomic;              // high while an amoswap holds the bus; one core here, so nothing to hold
 
     core #(.NREGS(NREGS)) dut (
         .clk(clk), .rst(rst),
         .i_req(i_req), .i_addr(i_addr), .i_valid(i_valid), .i_rdata(i_rdata),
         .d_req(d_req), .d_addr(d_addr), .d_wdata(d_wdata), .d_wstrb(d_wstrb),
         .d_gnt(d_gnt), .d_rdata(d_rdata),
-        .retire(retire), .retire_pc(retire_pc)
+        .retire(retire), .retire_pc(retire_pc), .d_atomic(d_atomic)
     );
 
     // ---------------- unified memory ----------------
