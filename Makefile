@@ -34,7 +34,7 @@ UNIT_GATED := arbiter mmio addr_decode
 # Blocks: sram_mem icache dcache dcache_fsm dcache_snoop
 COCOTB_GATED := sram_mem icache dcache dcache_fsm dcache_snoop
 
-.PHONY: help env lint synth synth-full check-top test test-core test-soc test-soc-top test-all \
+.PHONY: help env lint synth synth-full check-top test test-core test-soc test-soc-top test-os test-all \
         test-unit test-unit-gated test-cocotb test-cocotb-gated waves ci clean
 
 help:
@@ -47,6 +47,7 @@ help:
 	@echo "make test-core            core tests     (NREGS=16|32, TEST=all|<name>)"
 	@echo "make test-soc             SoC boot tests (NREGS=16|32, TEST=all|sample|<name>)"
 	@echo "make test-soc-top         dual-core soc_top tests (NREGS=16|32, DCACHE=0|1, TEST=all|<name>)"
+	@echo "make test-os              resident UART shell integration test (NREGS=16|32, DCACHE=0|1)"
 	@echo "make test-all             core, SoC and soc_top tests at both register counts, soc_top with and without D-cache"
 	@echo "make test-unit            block unit testbenches (BLOCK=all|arbiter|addr_decode|icache|sram_mem|mmio)"
 	@echo "make test-unit-gated      only the unit testbenches listed in UNIT_GATED"
@@ -144,7 +145,10 @@ waves:
 	@TRACE=1 ./sim/run_verilator.sh $(NREGS) $(TEST)
 	@echo "open with: surfer sim/obj_dir/core_mc_tb_$(NREGS)/$(TEST).vcd"
 
-ci: env lint synth check-top test-all test-unit-gated test-cocotb-gated
+test-os:
+	$(MAKE) -C programs test-os NREGS=$(NREGS) DCACHE=$(DCACHE)
+
+ci: env lint synth check-top test-all test-unit-gated test-cocotb-gated test-os
 
 clean:
 	rm -rf sim/obj_dir $(BUILD)

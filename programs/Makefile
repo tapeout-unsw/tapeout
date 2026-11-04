@@ -18,6 +18,9 @@ SOC_RTL  := $(sort $(wildcard ../rtl/core/*.sv ../rtl/bus/*.sv ../rtl/cache/*.sv
 SIM_ARGS ?=
 NREGS    ?= 16
 SOC_SIM  := $(SIM_DIR)/soc_top_$(NREGS)/simulator
+DCACHE   ?= 0
+RAW      ?= 10
+OS_SIM   := $(SIM_DIR)/os_$(NREGS)_$(DCACHE)_$(RAW)/simulator
 PROGRAM  ?=
 PROGRAMS ?= $(PROGRAM)
 SELECTED_PROGRAMS := $(patsubst %.S,%,$(strip $(PROGRAMS)))
@@ -28,7 +31,7 @@ ifneq ($(filter $(NREGS),16 32),$(NREGS))
 $(error NREGS must be 16 or 32)
 endif
 
-.PHONY: all bins run debug check-programs check-debug clean
+.PHONY: all bins run debug test-os check-programs check-debug clean
 .SECONDARY:
 all: $(HEXES)
 bins: $(BINS)
@@ -42,6 +45,9 @@ $(BUILD_DIR)/%.o: %.S $(wildcard *.inc) | $(BUILD_DIR)
 $(BUILD_DIR)/%.elf: $(BUILD_DIR)/%.o link.ld
 	$(RISCV_LD) -m elf32lriscv --no-relax -T link.ld -o $@ $<
 
+$(BUILD_DIR)/os.elf: $(BUILD_DIR)/os.o os.ld
+	$(RISCV_LD) -m elf32lriscv --no-relax -T os.ld -o $@ $<
+
 $(BIN_DIR)/%.bin: $(BUILD_DIR)/%.elf | $(BIN_DIR)
 	$(RISCV_OBJCOPY) -O binary $< $@
 
@@ -53,6 +59,15 @@ $(SOC_SIM): ../tb/soc_top_tb.sv $(SOC_RTL)
 	cd .. && $(VERILATOR) --binary --timing --trace --top-module soc_top_tb \
 		-GNREGS=$(NREGS) --Mdir programs/$(dir $@) \
 		-o simulator -j 2 $(patsubst ../%,%,$(SOC_RTL)) tb/soc_top_tb.sv
+
+$(OS_SIM): ../tb/os_tb.sv $(SOC_RTL)
+	mkdir -p $(dir $@)
+	cd .. && $(VERILATOR) --binary --timing --top-module os_tb \
+		-GNREGS=$(NREGS) -GDCACHE=$(DCACHE) -GRAW=$(RAW) --Mdir programs/$(dir $@) \
+		-o simulator -j 2 $(patsubst ../%,%,$(SOC_RTL)) tb/os_tb.sv
+
+test-os: $(HEX_DIR)/os.hex $(OS_SIM)
+	cd .. && ./programs/$(OS_SIM)
 
 check-programs:
 	@test -n "$(SELECTED_PROGRAMS)" || { \

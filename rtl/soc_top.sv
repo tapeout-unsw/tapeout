@@ -17,6 +17,8 @@
 //   0x1008              LOCK         read: old value, then set; write: clear
 //   0x100C              CORE_ID      read: 0 or 1
 //   0x1010              EXIT         write: set this core's exit flag
+//   0x1018              UART_RX      read: pop received byte
+//   0x101C              CONTROL      bit 0 RX claim, bits 2:1 hold core 1:0, bit 3 clear overflow
 //
 // Bus requesters, by b_src index
 //   0 bootloader, 1 core 0 data, 2 core 1 data, 3 core 0 I-cache, 4 core 1 I-cache
@@ -51,6 +53,8 @@ module soc_top #(
     logic [3:0]  boot_wstrb;
     logic        loading, core_run;
     logic [3:0]  chicken;
+    logic        rx_claim;
+    logic [1:0]  core_hold;     // per core: held in reset, caches flushed
 
     uart_rx #(.CLK_FREQ(CLK_FREQ), .BAUD_RATE(BAUD_RATE)) u_uart_rx (
         .clk(clk), .rst(rst), .rx(uart_rx),
@@ -60,6 +64,7 @@ module soc_top #(
     bootloader u_boot (
         .clk(clk), .rst(rst),
         .rx_data(rx_data), .rx_valid(rx_valid),
+        .rx_claim(rx_claim),
         .boot_req(boot_req), .boot_addr(boot_addr), .boot_wdata(boot_wdata),
         .core_run(core_run), .loading(loading), .chicken(chicken)
     );
@@ -86,7 +91,7 @@ module soc_top #(
     logic [31:0] c0_retire_pc;
 
     core #(.NREGS(NREGS)) u_core0 (
-        .clk(clk), .rst(core_rst),
+        .clk(clk), .rst(core_rst | core_hold[0]),
         .i_req(i0_req), .i_addr(i0_addr), .i_valid(i0_valid), .i_rdata(i0_rdata),
         .d_req(c0_d_req), .d_addr(c0_d_addr), .d_wdata(c0_d_wdata), .d_wstrb(c0_d_wstrb),
         .d_gnt(c0_d_gnt), .d_rdata(c0_d_rdata),
@@ -99,7 +104,7 @@ module soc_top #(
     logic [3:0]  ic0_wstrb;
 
     icache #(.RAW(RAW)) u_icache0 (
-        .clk(clk), .rst(rst), .flush(flush), .off(chicken[3]),
+        .clk(clk), .rst(rst), .flush(flush | core_hold[0]), .off(chicken[3]),
         .i_req(i0_req), .i_addr(i0_addr), .i_valid(i0_valid), .i_rdata(i0_rdata),
         .ic_req(ic0_req), .ic_addr(ic0_addr), .ic_wdata(ic0_wdata), .ic_wstrb(ic0_wstrb),
         .ic_gnt(ic0_gnt), .bus_rdata(bus_rdata)
@@ -117,7 +122,7 @@ module soc_top #(
     logic [31:0] c1_retire_pc;
 
     core #(.NREGS(NREGS)) u_core1 (
-        .clk(clk), .rst(core_rst),
+        .clk(clk), .rst(core_rst | core_hold[1]),
         .i_req(i1_req), .i_addr(i1_addr), .i_valid(i1_valid), .i_rdata(i1_rdata),
         .d_req(c1_d_req), .d_addr(c1_d_addr), .d_wdata(c1_d_wdata), .d_wstrb(c1_d_wstrb),
         .d_gnt(c1_d_gnt), .d_rdata(c1_d_rdata),
@@ -130,7 +135,7 @@ module soc_top #(
     logic [3:0]  ic1_wstrb;
 
     icache #(.RAW(RAW)) u_icache1 (
-        .clk(clk), .rst(rst), .flush(flush), .off(chicken[2]),
+        .clk(clk), .rst(rst), .flush(flush | core_hold[1]), .off(chicken[2]),
         .i_req(i1_req), .i_addr(i1_addr), .i_valid(i1_valid), .i_rdata(i1_rdata),
         .ic_req(ic1_req), .ic_addr(ic1_addr), .ic_wdata(ic1_wdata), .ic_wstrb(ic1_wstrb),
         .ic_gnt(ic1_gnt), .bus_rdata(bus_rdata)
@@ -151,7 +156,7 @@ module soc_top #(
 
     if (DCACHE != 0) begin : g_dcache
         dcache #(.RAW(RAW), .SRC(3'd1)) u_dcache0 (
-            .clk(clk), .rst(rst), .flush(flush), .off(chicken[1]),
+            .clk(clk), .rst(rst), .flush(flush | core_hold[0]), .off(chicken[1]),
             .d_req(c0_d_req), .d_addr(c0_d_addr), .d_wdata(c0_d_wdata), .d_wstrb(c0_d_wstrb),
             .d_gnt(c0_d_gnt), .d_rdata(c0_d_rdata),
             .dc_req(d0_req), .dc_addr(d0_addr), .dc_wdata(d0_wdata), .dc_wstrb(d0_wstrb),
@@ -160,7 +165,7 @@ module soc_top #(
         );
 
         dcache #(.RAW(RAW), .SRC(3'd2)) u_dcache1 (
-            .clk(clk), .rst(rst), .flush(flush), .off(chicken[0]),
+            .clk(clk), .rst(rst), .flush(flush | core_hold[1]), .off(chicken[0]),
             .d_req(c1_d_req), .d_addr(c1_d_addr), .d_wdata(c1_d_wdata), .d_wstrb(c1_d_wstrb),
             .d_gnt(c1_d_gnt), .d_rdata(c1_d_rdata),
             .dc_req(d1_req), .dc_addr(d1_addr), .dc_wdata(d1_wdata), .dc_wstrb(d1_wstrb),
@@ -168,7 +173,8 @@ module soc_top #(
             .b_valid(b_valid), .b_addr(b_addr), .b_wstrb(b_wstrb), .b_src(b_src)
         );
     end else begin : g_no_dcache
-        assign d0_req   = c0_d_req;    assign d1_req   = c1_d_req;
+        assign d0_req   = c0_d_req && !core_hold[0];
+        assign d1_req   = c1_d_req && !core_hold[1];
         assign d0_addr  = c0_d_addr;   assign d1_addr  = c1_d_addr;
         assign d0_wdata = c0_d_wdata;  assign d1_wdata = c1_d_wdata;
         assign d0_wstrb = c0_d_wstrb;  assign d1_wstrb = c1_d_wstrb;
@@ -221,6 +227,8 @@ module soc_top #(
         .clk(clk), .rst(rst), .core_run(core_run),
         .m_en(m_en), .m_addr(m_addr), .m_we(m_we), .m_wdata(m_wdata), .m_core(m_core),
         .m_rdata(m_rdata),
+        .rx_data(rx_data), .rx_valid(rx_valid),
+        .rx_claim(rx_claim), .core_hold(core_hold),
         .tx_start(tx_start), .tx_data(tx_data), .tx_busy(tx_busy),
         .done(done), .dbg_lock(dbg_lock), .dbg_exit(dbg_exit)
     );
