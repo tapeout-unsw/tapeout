@@ -42,3 +42,8 @@ result
 /programs/bin/
 /programs/hex/
 /programs/obj_dir/
+
+# physical design outputs, kept out of git
+*.gds
+*.gds.gz
+*.oas
