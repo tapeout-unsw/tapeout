@@ -10,7 +10,8 @@
 //   i_valid  the instruction is on i_rdata this cycle; latched into IR.
 //
 // Data port, byte-addressed, 13-bit address
-//   d_req    high in S_MEM. d_addr, d_wdata, d_wstrb are stable while d_req is
+//   d_req    high in S_MEM. d_addr, d_wdata, d_wstrb are registered at the end
+//            of S_EXEC, so they come from flops and are stable while d_req is
 //            high. d_addr is word aligned; d_wstrb selects the bytes and is
 //            0000 for a load.
 //   d_gnt    the access was accepted this cycle. A store is then complete; a
@@ -23,7 +24,10 @@
 //   S_EXEC     decode, register read, ALU. Non-memory instructions write back
 //              and update the PC here
 //   S_MEM      present the data access, wait for d_gnt; stores complete here
-//   S_MEM_W    load data valid on d_rdata, written back here
+//   S_MEM_W    load data valid on d_rdata, registered in ld_q
+//   A load is written back in the first S_FETCH cycle after S_MEM_W, while IR
+//   still holds the load. The next instruction reads registers in S_EXEC, which
+//   is later, so this costs no cycle and keeps d_rdata off the write-back path.
 //
 module core #(
     parameter int NREGS = 16
@@ -110,13 +114,14 @@ module core #(
     end
 
     // ---------------- byte / halfword handling ----------------
-    logic [31:0] st_wdata, load_data;
+    logic [31:0] st_wdata, load_data, ld_q;
+    logic        ld_wb;      // ld_q holds a load to write back this cycle
     logic [3:0]  st_wstrb;
 
     mem_access u_mem_access (
         .func3(func3), .addr_lo(alu_result[1:0]), .mem_write(mem_write),
         .store_data(rs2_data), .w_data(st_wdata), .w_strb(st_wstrb),
-        .raw_rdata(d_rdata), .load_data(load_data)
+        .raw_rdata(ld_q), .load_data(load_data)
     );
 
     // ---------------- next PC ----------------
@@ -141,14 +146,39 @@ module core #(
     assign i_req   = (state == S_FETCH);
     assign i_addr  = pc[12:0];
 
-    assign d_req   = (state == S_MEM);
-    assign d_addr  = {alu_result[12:2], 2'b00};
-    assign d_wdata = st_wdata;
-    assign d_wstrb = mem_write ? st_wstrb : 4'b0000;
+    // The access is computed in S_EXEC and registered, so S_MEM starts from
+    // flops rather than the register file and ALU. Its inputs do not change
+    // between S_EXEC and S_MEM, so the values are the same.
+    logic [12:0] d_addr_q;
+    logic [31:0] d_wdata_q;
+    logic [3:0]  d_wstrb_q;
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            d_addr_q  <= '0;
+            d_wdata_q <= '0;
+            d_wstrb_q <= '0;
+        end else if (state == S_EXEC) begin
+            d_addr_q  <= {alu_result[12:2], 2'b00};
+            d_wdata_q <= st_wdata;
+            d_wstrb_q <= mem_write ? st_wstrb : 4'b0000;
+        end
+    end
 
-    // Register write: EXEC for ALU-class instructions, MEM_W for loads.
+    assign d_req   = (state == S_MEM);
+    assign d_addr  = d_addr_q;
+    assign d_wdata = d_wdata_q;
+    assign d_wstrb = d_wstrb_q;
+
+    // Register write: EXEC for ALU-class instructions, the cycle after MEM_W
+    // for loads.
     assign rf_we = reg_write & ( (state == S_EXEC && !mem_read && !mem_write)
-                               | (state == S_MEM_W) );
+                               | ld_wb );
+
+    always_ff @(posedge clk) begin
+        if (rst) ld_wb <= 1'b0;
+        else     ld_wb <= (state == S_MEM_W);
+        if (state == S_MEM_W) ld_q <= d_rdata;
+    end
 
     assign retire    = (state == S_EXEC && !mem_read && !mem_write)
                      | (state == S_MEM  &&  mem_write && d_gnt)
