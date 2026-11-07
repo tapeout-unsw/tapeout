@@ -82,7 +82,7 @@ module soc #(
         .d_req(d_req), .d_addr(d_addr), .d_wdata(d_wdata), .d_wstrb(d_wstrb),
         .d_gnt(d_gnt), .d_rdata(mem_rdata),
         .retire(retire), .retire_pc(retire_pc),
-        .d_atomic()                      // one core, no arbiter: nothing to hold the bus against
+        .d_atomic(), .amo_off(1'b0)                      // one core, no arbiter: nothing to hold the bus against
     );
 
     // Fetch: issue the read once, return the word the next cycle.

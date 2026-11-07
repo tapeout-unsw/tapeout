@@ -47,6 +47,7 @@ module core #(
     input  logic        d_gnt,
     input  logic [31:0] d_rdata,
     output logic        d_atomic,
+    input  logic        amo_off,    // chicken bit
 
     // Observability: pulses high for one cycle as each instruction completes.
     output logic        retire,
@@ -77,7 +78,7 @@ module core #(
         .reg_write(reg_write), .imm_sel(imm_sel), .alu_op(alu_op),
         .alu_src(alu_src), .branch(branch), .jmp(jmp), .jmpr(jmpr),
         .mem_read(mem_read), .mem_write(mem_write), .lui(lui), .auipc(auipc),
-        .amo_swap(amo_swap)
+        .amo_swap(amo_swap), .amo_off(amo_off)
     );
 
     logic [31:0] imm;
@@ -162,7 +163,7 @@ module core #(
         .mem_rdata(d_rdata)
     );
 
-    assign d_atomic = (state == S_AMO_WAIT) && amo_busy;
+    assign d_atomic = (state == S_AMO_WAIT) && amo_busy && !amo_off;
 
     assign d_req   = (state == S_AMO_WAIT) ? amo_req : (state == S_MEM);
     assign d_addr  = (state == S_AMO_WAIT) ? amo_addr : {alu_result[12:2], 2'b00};

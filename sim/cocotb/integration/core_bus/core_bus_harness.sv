@@ -128,7 +128,7 @@ module core_bus_harness #(
         .i_req(i_req0), .i_addr(i_addr0), .i_valid(i_valid0), .i_rdata(i_rdata0),
         .d_req(d0_req), .d_addr(d0_addr), .d_wdata(d0_wdata), .d_wstrb(d0_wstrb),
         .d_gnt(d0_gnt), .d_rdata(bus_rdata),
-        .retire(retire0), .retire_pc(retire_pc0), .d_atomic(d0_atomic)
+        .retire(retire0), .retire_pc(retire_pc0), .d_atomic(d0_atomic), .amo_off(1'b0)
     );
 
     core #(.NREGS(16)) u_core1 (
@@ -136,7 +136,7 @@ module core_bus_harness #(
         .i_req(i_req1), .i_addr(i_addr1), .i_valid(i_valid1), .i_rdata(i_rdata1),
         .d_req(d1_req), .d_addr(d1_addr), .d_wdata(d1_wdata), .d_wstrb(d1_wstrb),
         .d_gnt(d1_gnt), .d_rdata(bus_rdata),
-        .retire(retire1), .retire_pc(retire_pc1), .d_atomic(d1_atomic)
+        .retire(retire1), .retire_pc(retire_pc1), .d_atomic(d1_atomic), .amo_off(1'b0)
     );
 
     // ---------------- arbiter ----------------

@@ -42,7 +42,7 @@ module core_mc_tb;
         .i_req(i_req), .i_addr(i_addr), .i_valid(i_valid), .i_rdata(i_rdata),
         .d_req(d_req), .d_addr(d_addr), .d_wdata(d_wdata), .d_wstrb(d_wstrb),
         .d_gnt(d_gnt), .d_rdata(d_rdata),
-        .retire(retire), .retire_pc(retire_pc), .d_atomic(d_atomic)
+        .retire(retire), .retire_pc(retire_pc), .d_atomic(d_atomic), .amo_off(1'b0)
     );
 
     // ---------------- unified memory ----------------
