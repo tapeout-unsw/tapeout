@@ -21,7 +21,8 @@ module decoder(
     output logic auipc,
 
     // New Logic from AMOSWAP:
-    output logic amo_swap
+    output logic amo_swap,
+    input  logic amo_off   // chicken bit for amoswap, when high amoswap does nothing
 
 );
 
@@ -128,7 +129,7 @@ module decoder(
         end
 
         7'b0101111: begin // AMOSWAP
-            if (func3 == 3'b010 && inst[31:27] == 5'b00001) begin
+            if (!amo_off && func3 == 3'b010 && inst[31:27] == 5'b00001) begin
                 amo_swap  = 1'b1;
                 reg_write = 1'b1;
                 mem_read  = 1'b1;
