@@ -3,7 +3,7 @@
 // memory one word per bus write, then releases the cores.
 //
 // Protocol (host -> board), little-endian:
-//   1. 4 bytes : bits 27:0 are the count and bits 31:28 are the chicken bits
+//   1. 4 bytes : bits 26:0 are the count, bit 27 turns off amoswap, and bits 31:28 are the chicken bits
 //   2. N*4 bytes : the memory image, one 32-bit word per 4 bytes, written
 //                  from address 0
 //
@@ -73,8 +73,8 @@ module bootloader (
                             word_count <= {5'b0, full_word[26:0]};  // Ignore chicken bits
                             words_got  <= '0;
                             state      <= GET_PROG;
-                            chicken <= full_word[31:28];    // First 4 bits of full word are cache chicken bits
-                            amo_off <= full_word[27];       // 5th bit of full word is amoswap chicken bit
+                            chicken <= full_word[31:28];    // Top 4 bits of full word are cache chicken bits
+                            amo_off <= full_word[27];       // Bit 27 is the amoswap chicken bit
                         end
                         GET_PROG: begin
                             boot_req    <= 1'b1;
