@@ -53,6 +53,7 @@ module soc_top #(
     logic [3:0]  boot_wstrb;
     logic        loading, core_run;
     logic [3:0]  chicken;
+    logic        amo_off;
     logic        rx_claim;
     logic [1:0]  core_hold;     // per core: held in reset, caches flushed
 
@@ -66,7 +67,7 @@ module soc_top #(
         .rx_data(rx_data), .rx_valid(rx_valid),
         .rx_claim(rx_claim),
         .boot_req(boot_req), .boot_addr(boot_addr), .boot_wdata(boot_wdata),
-        .core_run(core_run), .loading(loading), .chicken(chicken)
+        .core_run(core_run), .loading(loading), .chicken(chicken), .amo_off(amo_off)
     );
 
     assign boot_wstrb = 4'b1111;
