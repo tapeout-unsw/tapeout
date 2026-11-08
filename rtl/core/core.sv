@@ -71,6 +71,7 @@ module core #(
     logic [31:0] amo_wdata, amo_old;
     logic [3:0]  amo_wstrb;
 
+    /* verilator lint_off PINCONNECTEMPTY */
     decoder u_decoder (
         .inst(ir), .opc(), .rd(rd), .rs1(rs1), .rs2(rs2),
         .func3(func3), .func7(),
@@ -79,6 +80,7 @@ module core #(
         .mem_read(mem_read), .mem_write(mem_write), .lui(lui), .auipc(auipc),
         .amo_swap(amo_swap), .amo_off(amo_off)
     );
+    /* verilator lint_on PINCONNECTEMPTY */
 
     logic [31:0] imm;
     imm_gen u_imm_gen (.inst(ir), .ctrl(imm_sel), .imm(imm));
