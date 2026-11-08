@@ -42,7 +42,7 @@ module single_core_icache_harness (
         .clk(clk), .rst(rst), .i_req(i_req), .i_addr(i_addr),
         .i_valid(i_valid), .i_rdata(i_rdata), .d_req(d_req), .d_addr(d_addr),
         .d_wdata(d_wdata), .d_wstrb(d_wstrb), .d_gnt(d_gnt), .d_rdata(d_rdata),
-        .retire(retire), .retire_pc(retire_pc)
+        .retire(retire), .retire_pc(retire_pc), .amo_off(1'b0)
     );
 
     icache u_cache (

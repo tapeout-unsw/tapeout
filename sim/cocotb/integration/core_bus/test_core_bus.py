@@ -300,6 +300,7 @@ class Bench:
         waiting = {k: 0 for k in req_names}
         prev_core_req = {0: None, 1: None}
         pending_read = None                    # (expected, src, addr)
+        atomic_owner = None                    # "d0"/"d1" while its amoswap holds the bus
         while True:
             await FallingEdge(d.clk)
             self.cycle += 1
@@ -321,6 +322,7 @@ class Bench:
             gnt = {"d0": g("d0_gnt"), "d1": g("d1_gnt"), "ic0": g("ic0_gnt"), "ic1": g("ic1_gnt")}
             b_valid, b_src = g("b_valid"), g("b_src")
             b_addr, b_wstrb, b_wdata = g("b_addr"), g("b_wstrb"), g("b_wdata")
+            locked = atomic_owner is not None
 
             # ---- one grant max, only to requesters
             if sum(gnt.values()) > 1:
@@ -336,7 +338,14 @@ class Bench:
                 if b_valid != g("arb_boot_req") or (b_valid and b_src != 0):
                     self.err(f"loading: b_valid={b_valid} b_src={b_src} boot_req={g('arb_boot_req')}")
             else:
-                if b_valid != int(any(req.values())):
+                if locked:
+                    if b_valid != req[atomic_owner]:
+                        self.err(f"b_valid={b_valid} while {atomic_owner}'s amoswap holds the bus, "
+                                 f"requests={req}")
+                    for k in req_names:
+                        if gnt[k] and k != atomic_owner:
+                            self.err(f"{k} granted while {atomic_owner}'s amoswap holds the bus")
+                elif b_valid != int(any(req.values())):
                     self.err(f"b_valid={b_valid} but requests={req}")
                 won = [k for k in req_names if gnt[k]]
                 if b_valid and (not won or SRC.get(b_src) != won[0]):
@@ -361,6 +370,14 @@ class Bench:
             else:
                 self.grants["none"] += 1
 
+            # ---- amoswap bus lock (arbiter.sv): a core's atomic read takes the
+            # bus, and the next granted write (the swap's write) releases it
+            if b_valid and not locked and SRC.get(b_src) in ("d0", "d1") \
+                    and b_wstrb == 0 and g(f"{SRC[b_src]}_atomic"):
+                atomic_owner = SRC[b_src]
+            elif b_valid and locked and b_wstrb != 0:
+                atomic_owner = None
+
             # ---- decoder routing
             self._check_decode(b_valid, b_addr, b_wstrb, b_wdata, b_src)
 
@@ -375,6 +392,8 @@ class Bench:
 
             # ---- fairness
             for k in req_names:
+                if locked and req[k] and not gnt[k]:
+                    continue                   # waiting behind an amoswap: pause the count
                 if req[k] and not gnt[k] and not loading:
                     waiting[k] += 1
                     if waiting[k] > MAX_WAIT:
@@ -692,7 +711,7 @@ async def b6_real_bootloader(dut):
 # --------------------------------------------------------------------------
 # pytest entry point (picked up by `make test-cocotb`)
 # --------------------------------------------------------------------------
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "common"))   # sim/cocotb/common
 
 SOURCES = [
     "rtl/core/alu.sv",
@@ -701,6 +720,7 @@ SOURCES = [
     "rtl/core/mem_access.sv",
     "rtl/core/register_file.sv",
     "rtl/core/core.sv",
+    "rtl/core/amoswap.sv",
     "rtl/bus/arbiter.sv",
     "rtl/bus/addr_decode.sv",
     "rtl/mem/sram_macro.sv",
@@ -710,7 +730,7 @@ SOURCES = [
     "rtl/periph/uart_tx.sv",
     # the harness next to this file, so the folder can be moved freely
     str((Path(__file__).resolve().parent / "core_bus_harness.sv")
-        .relative_to(Path(__file__).resolve().parents[3])),
+        .relative_to(Path(__file__).resolve().parents[4])),   # repository root
 ]
 
 
