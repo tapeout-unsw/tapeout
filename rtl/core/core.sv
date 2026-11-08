@@ -10,22 +10,21 @@
 //   i_valid  the instruction is on i_rdata this cycle; latched into IR.
 //
 // Data port, byte-addressed, 13-bit address
-//   d_req    high in S_MEM. d_addr, d_wdata, d_wstrb are stable while d_req is
-//            high. d_addr is word aligned; d_wstrb selects the bytes and is
-//            0000 for a load.
-//   d_gnt    the access was accepted this cycle. A store is then complete; a
-//            load's data is on d_rdata in the following cycle (S_MEM_W).
-//   Misaligned accesses are not supported: the address is rounded down to the
-//   word, so software must not issue them.
+//   Ordinary accesses are registered at the end of S_EXEC, so the request
+//   fields come from flops and remain stable while d_req is high.
+//   d_gnt accepts an access; load data returns the following cycle.
+//   d_atomic identifies an AMOSWAP read/write sequence.
+//   Misaligned accesses are not supported.
 //
 // FSM
 //   S_FETCH    present PC, wait for i_valid, latch IR
-//   S_EXEC     decode, register read, ALU. Non-memory instructions write back
-//              and update the PC here
-//   S_MEM      present the data access, wait for d_gnt; stores complete here
-//   S_MEM_W    load data valid on d_rdata, written back here
-//   S_AMO_WAIT amoswap.w: u_amoswap reads the old word, then writes rs2, while
-//              d_atomic holds the bus; rd gets the old word when it finishes
+//   S_EXEC     decode, register read, ALU; start memory access or AMOSWAP
+//   S_MEM      present the registered data access, wait for d_gnt
+//   S_MEM_W    register ordinary load data in ld_q
+//   S_AMO_WAIT wait for u_amoswap; rd receives the old word when done
+//
+// An ordinary load writes back in the first S_FETCH cycle after S_MEM_W,
+// while IR still holds the load. This keeps d_rdata off the writeback path.
 //
 module core #(
     parameter int NREGS = 16
@@ -47,7 +46,7 @@ module core #(
     input  logic        d_gnt,
     input  logic [31:0] d_rdata,
     output logic        d_atomic,
-    input  logic        amo_off,    // chicken bit
+    input  logic        amo_off,     // chicken bit
 
     // Observability: pulses high for one cycle as each instruction completes.
     output logic        retire,
@@ -66,7 +65,7 @@ module core #(
     logic [3:0] alu_op;
     logic       reg_write, alu_src, branch, jmp, jmpr, mem_read, mem_write, lui, auipc;
 
-    // amoswap.w: the swap runs in u_amoswap below while the core waits in S_AMO_WAIT
+    // amoswap.w runs in u_amoswap while the core waits in S_AMO_WAIT.
     logic        amo_swap, amo_busy, amo_done, amo_req;
     logic [12:0] amo_addr;
     logic [31:0] amo_wdata, amo_old;
@@ -121,13 +120,14 @@ module core #(
     end
 
     // ---------------- byte / halfword handling ----------------
-    logic [31:0] st_wdata, load_data;
+    logic [31:0] st_wdata, load_data, ld_q;
+    logic        ld_wb;      // ld_q holds a load to write back this cycle
     logic [3:0]  st_wstrb;
 
     mem_access u_mem_access (
         .func3(func3), .addr_lo(alu_result[1:0]), .mem_write(mem_write),
         .store_data(rs2_data), .w_data(st_wdata), .w_strb(st_wstrb),
-        .raw_rdata(d_rdata), .load_data(load_data)
+        .raw_rdata(ld_q), .load_data(load_data)
     );
 
     // ---------------- next PC ----------------
@@ -153,6 +153,24 @@ module core #(
     assign i_req   = (state == S_FETCH);
     assign i_addr  = pc[12:0];
 
+    // Ordinary accesses are computed in S_EXEC and registered, so S_MEM
+    // starts from flops rather than the register file and ALU.
+    logic [12:0] d_addr_q;
+    logic [31:0] d_wdata_q;
+    logic [3:0]  d_wstrb_q;
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            d_addr_q  <= '0;
+            d_wdata_q <= '0;
+            d_wstrb_q <= '0;
+        end else if (state == S_EXEC) begin
+            d_addr_q  <= {alu_result[12:2], 2'b00};
+            d_wdata_q <= st_wdata;
+            d_wstrb_q <= mem_write ? st_wstrb : 4'b0000;
+        end
+    end
+
     // ---------------- amoswap ----------------
     amoswap u_amoswap (
         .clk(clk), .rst(rst), .start(state == S_EXEC && amo_swap),
@@ -165,17 +183,24 @@ module core #(
 
     assign d_atomic = (state == S_AMO_WAIT) && amo_busy && !amo_off;
 
-    assign d_req   = (state == S_AMO_WAIT) ? amo_req : (state == S_MEM);
-    assign d_addr  = (state == S_AMO_WAIT) ? amo_addr : {alu_result[12:2], 2'b00};
-    assign d_wdata = (state == S_AMO_WAIT) ? amo_wdata : st_wdata;
-    assign d_wstrb = (state == S_AMO_WAIT) ? amo_wstrb : mem_write ? st_wstrb : 4'b0000;
+    assign d_req   = (state == S_AMO_WAIT) ? amo_req   : (state == S_MEM);
+    assign d_addr  = (state == S_AMO_WAIT) ? amo_addr  : d_addr_q;
+    assign d_wdata = (state == S_AMO_WAIT) ? amo_wdata : d_wdata_q;
+    assign d_wstrb = (state == S_AMO_WAIT) ? amo_wstrb : d_wstrb_q;
 
-    // Register write: EXEC for ALU-class instructions, MEM_W for loads.
-    assign rf_we = reg_write & ( (state == S_EXEC && !mem_read && !mem_write)
-                               | (state == S_MEM_W && !amo_swap)
-                               | (state == S_AMO_WAIT && amo_done));
+    // Register write: EXEC for ALU-class instructions, the cycle after MEM_W
+    // for ordinary loads, and completion for AMOSWAP.
+    assign rf_we = reg_write & ( (state == S_EXEC && !mem_read && !mem_write && !amo_swap)
+                               | ld_wb
+                               | (state == S_AMO_WAIT && amo_done) );
 
-    assign retire    = (state == S_EXEC && !mem_read && !mem_write)
+    always_ff @(posedge clk) begin
+        if (rst) ld_wb <= 1'b0;
+        else     ld_wb <= (state == S_MEM_W);
+        if (state == S_MEM_W) ld_q <= d_rdata;
+    end
+
+    assign retire    = (state == S_EXEC && !mem_read && !mem_write && !amo_swap)
                      | (state == S_MEM  &&  mem_write && d_gnt)
                      | (state == S_MEM_W && !amo_swap)
                      | (state == S_AMO_WAIT && amo_done);
@@ -200,12 +225,7 @@ module core #(
                     else begin pc <= next_pc; state <= S_FETCH; end
                 end
                 S_MEM_W: begin pc <= next_pc; state <= S_FETCH; end
-                S_AMO_WAIT: begin
-                    if (amo_done) begin
-                        pc    <= next_pc;
-                        state <= S_FETCH;
-                    end
-                end
+                S_AMO_WAIT: if (amo_done) begin pc <= next_pc; state <= S_FETCH; end
                 default:   state <= S_FETCH;
             endcase
         end

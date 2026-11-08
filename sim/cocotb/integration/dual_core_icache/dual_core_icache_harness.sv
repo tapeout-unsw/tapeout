@@ -84,6 +84,7 @@ module dual_core_icache_harness (
         .clk(clk),
         .rst(rst),
         .flush(flush),
+        .off(1'b0),
 
         .i_req(i0_req),
         .i_addr(i0_addr),
@@ -124,6 +125,7 @@ module dual_core_icache_harness (
         .clk(clk),
         .rst(rst),
         .flush(flush),
+        .off(1'b0),
 
         .i_req(i1_req),
         .i_addr(i1_addr),

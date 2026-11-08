@@ -58,14 +58,14 @@ module icache_bus_harness #(
     logic [3:0]  ic0_wstrb, ic1_wstrb;
 
     icache #(.RAW(RAW)) u_icache0 (
-        .clk(clk), .rst(rst), .flush(flush),
+        .clk(clk), .rst(rst), .flush(flush), .off(1'b0),
         .i_req(i0_req), .i_addr(i0_addr), .i_valid(i0_valid), .i_rdata(i0_rdata),
         .ic_req(ic0_req), .ic_addr(ic0_addr), .ic_wdata(ic0_wdata), .ic_wstrb(ic0_wstrb),
         .ic_gnt(ic0_gnt), .bus_rdata(bus_rdata)
     );
 
     icache #(.RAW(RAW)) u_icache1 (
-        .clk(clk), .rst(rst), .flush(flush),
+        .clk(clk), .rst(rst), .flush(flush), .off(1'b0),
         .i_req(i1_req), .i_addr(i1_addr), .i_valid(i1_valid), .i_rdata(i1_rdata),
         .ic_req(ic1_req), .ic_addr(ic1_addr), .ic_wdata(ic1_wdata), .ic_wstrb(ic1_wstrb),
         .ic_gnt(ic1_gnt), .bus_rdata(bus_rdata)

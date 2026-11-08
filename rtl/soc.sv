@@ -60,8 +60,9 @@ module soc #(
     logic [31:0] boot_waddr, boot_wdata;
 
     bootloader u_boot (
-        .clk(clk), .rst(rst),
+        .clk(clk), .rst(rst), .chicken(), .amo_off(),
         .rx_data(rx_data), .rx_valid(rx_valid),
+        .rx_claim(1'b0),
         .boot_req(boot_we), .boot_addr(boot_addr), .boot_wdata(boot_wdata),
         .core_run(core_run), .loading(loading)
     );
