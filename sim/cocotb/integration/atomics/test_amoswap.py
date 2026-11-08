@@ -142,6 +142,46 @@ async def ttas_lock_counter(dut):
     tb.finish(bad)
 
 
+@cocotb.test()
+async def ttas_and_tas_share_one_lock(dut):
+    """A4: the same lock word, two acquire styles at once. Core 0 uses
+    test-and-test-and-set (spin on lw, then amoswap); core 1 uses plain
+    test-and-set (spin on amoswap itself). Both take the lock only through an
+    amoswap on the same address, so they still exclude each other: no lost
+    updates, never two owners. Logs each core's bus accesses to the lock word,
+    to show what the plain test-and-set spinner costs."""
+    n = 20
+    lock, counter, owner, intruder = 0x380, 0x300, 0x384, 0x388
+    p = assemble(core_tag_prologue() + [
+        addi(13, 0, lock), addi(14, 0, 1), addi(8, 0, counter), addi(15, 0, owner),
+        addi(7, 0, 0), addi(12, 0, n),
+        "acq", ("bne", 2, 0, "tas"),
+        lw(3, 13, 0), ("bne", 3, 0, "acq"),              # core 0: test first
+        "tas", amoswap(3, 14, 13), ("bne", 3, 0, "acq"), # both: test-and-set
+        lw(4, 15, 0), ("beq", 4, 0, "alone"),
+        sw(6, 0, intruder),
+        "alone", sw(6, 15, 0),
+        lw(4, 8, 0), addi(4, 4, 1), sw(4, 8, 0),
+        sw(0, 15, 0),
+        sw(0, 13, 0),                                     # release
+        addi(7, 7, 1), ("bne", 7, 12, "acq"),
+        HALT,
+    ])
+    prog = (p, {}, {counter: 2 * n, lock: 0, owner: 0, intruder: 0})
+    tb, halt = await setup(dut, prog, prog)
+    cocotb.start_soon(tb.fetch_jitter(0.3))
+    await tb.run_cores()
+    await tb.run_until_halt(halt, timeout=40000)
+    for src, style in (("d0", "TTAS"), ("d1", "TAS")):
+        reads = sum(1 for e in tb.bus_log if e[1] == src and e[2] == lock and e[3] == 0)
+        writes = sum(1 for e in tb.bus_log if e[1] == src and e[2] == lock and e[3] != 0)
+        dut._log.info(f"{src} ({style}): {reads} reads, {writes} writes of the lock word")
+    bad = await tb.check_ram(prog[2], "mixed")
+    for b in bad:
+        dut._log.error(b)
+    tb.finish(bad)
+
+
 def test_amoswap():
     sys.path.insert(0, str(HERE.parents[1] / "common"))
     from runner import run
