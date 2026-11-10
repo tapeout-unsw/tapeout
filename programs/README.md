@@ -65,17 +65,17 @@ has no memory protection, so payload stores can overwrite the OS and core 1
 can access peripherals. The resident-shell guarantee assumes the payload
 respects the reserved memory and UART RX registers.
 
-The hardware support is generic: any program on either core can claim UART RX
-and hold or release the other core. While CONTROL bit 0 is set, the bootloader
-ignores incoming bytes and a 16-byte RX FIFO supplies software. Board reset
-restores binary boot mode. Existing programs that never claim RX retain the
-original back-to-back binary reload behavior.
+The hardware support is generic: either core can claim UART RX and hold or
+release the other core. While CONTROL bit 0 is set, the bootloader ignores
+incoming bytes and a 16-byte RX FIFO supplies software. Board reset restores
+binary boot mode. Existing programs that never claim RX retain the original
+back-to-back binary reload behavior.
 
 | Register | Meaning |
 |---|---|
-| `0x1004` | Bit 0 TX busy, bit 1 RX available, bit 2 sticky RX overflow |
+| `0x1004` | Bit 0 TX FIFO full, bit 1 RX available, bit 2 sticky RX overflow, bit 3 TX active |
 | `0x1018` | Read pops one RX byte, or returns zero when empty |
-| `0x101c` | CONTROL, writable by either core (bits below) |
+| `0x101c` | CONTROL (bits below) |
 
 | CONTROL bit | Name | Meaning |
 |---|---|---|
@@ -83,9 +83,19 @@ original back-to-back binary reload behavior.
 | 1 | `HOLD0` | Core 0 held in reset with its caches flushed |
 | 2 | `HOLD1` | Core 1 held in reset with its caches flushed |
 | 3 | `OVF_CLR` | Write 1 to clear RX overflow; reads 0 |
+| 4 | `RX_OWNER` | Read only: the core that set `RX_CLAIM` |
 
-A core's write to its own HOLD bit is ignored, so a core cannot stop itself
-and both cores can never be held at once. A released core restarts at address
+While RX is unclaimed, either core may write CONTROL. The core whose write sets
+`RX_CLAIM` becomes the owner. Until the owner clears `RX_CLAIM`, the other
+core's CONTROL writes are ignored, so a payload cannot hold the shell core,
+clear overflow, or hand RX back to the bootloader. A core's write to its own
+HOLD bit is ignored, so a core cannot stop itself and both cores can never be
+held at once.
+
+Transmit goes through a two-entry FIFO. Poll bit 0 of `0x1004` before each
+write. It clears only while both entries are free, so the shell and a payload
+can print at the same time without dropping bytes, although their characters
+may interleave. Poll bit 3 to wait until all output has left the pin. A released core restarts at address
 0, so software chooses its role by reading CORE_ID. The default shell writes
 `5` to claim RX and hold core 1, `1` to release it, and `13` to also clear
 overflow. Core reset through the bootloader clears the FIFO and CONTROL. This shell runs indefinitely, so use `make test-os`

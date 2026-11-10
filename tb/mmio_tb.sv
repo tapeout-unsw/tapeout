@@ -94,17 +94,33 @@ module mmio_tb;
         access(A_ID, 0, 0, 0); check(got == 0, "CORE_ID reads 0 for core 0");
         access(A_ID, 0, 0, 1); check(got == 1, "CORE_ID reads 1 for core 1");
 
-        // UART: tx_start pulses on a write only, carrying the byte
-        access(A_DATA, 1, 8'h41, 0); check(start_seen, "UART_DATA write pulses tx_start");
+        // UART: a write queues the byte, and it starts once the transmitter is idle
+        access(A_STATUS, 0, 0, 0); check(got == 0, "UART_STATUS idle after reset");
+        access(A_DATA, 1, 8'h5A, 0); check(!start_seen, "write queues, no same-cycle start");
+        #1 check(tx_start && tx_data == 8'h5A, "idle transmitter starts the queued byte");
+        @(negedge clk);
         #1 check(!tx_start, "tx_start lasts one cycle");
-        m_en = 1; m_addr = A_DATA; m_we = 1; m_wdata = 8'h5A; #1;
-        check(tx_data == 8'h5A, "tx_data carries the written byte");
-        @(negedge clk); m_en = 0; m_we = 0;
         access(A_DATA, 0, 0, 0); check(!start_seen && got == 0, "UART_DATA read sends nothing, reads 0");
-        tx_busy = 1;
-        access(A_STATUS, 0, 0, 0); check(got == 1, "UART_STATUS shows busy");
+
+        // Both cores poll TX_FULL clear, then both write: neither byte is lost.
+        tx_busy = 1;                                  // a byte is shifting out
+        access(A_STATUS, 0, 0, 0); check(got == 8, "busy transmitter: TX_ACTIVE, not TX_FULL");
+        access(A_STATUS, 0, 0, 1); check(got == 8, "core 1 also sees TX_FULL clear");
+        access(A_DATA, 1, 8'h41, 0); check(!start_seen, "core 0 byte waits behind the transmitter");
+        access(A_STATUS, 0, 0, 0); check(got == 9, "one queued byte sets TX_FULL");
+        access(A_DATA, 1, 8'h42, 1); check(!start_seen, "core 1 byte also queues");
+        access(A_DATA, 1, 8'h43, 0);                  // did not poll: FIFO full, dropped
         tx_busy = 0;
-        access(A_STATUS, 0, 0, 0); check(got == 0, "UART_STATUS shows idle");
+        #1 check(tx_start && tx_data == 8'h41, "first queued byte goes first");
+        @(negedge clk); tx_busy = 1;
+        #1 check(!tx_start, "no start while the transmitter is busy");
+        tx_busy = 0;
+        #1 check(tx_start && tx_data == 8'h42, "second core's byte follows");
+        @(negedge clk); tx_busy = 1;
+        access(A_STATUS, 0, 0, 0); check(got == 8, "FIFO empty, last byte still shifting");
+        tx_busy = 0;
+        #1 check(!tx_start, "write to a full FIFO was dropped");
+        access(A_STATUS, 0, 0, 0); check(got == 0, "UART_STATUS idle once drained");
 
         // EXIT and done
         check(!done && dbg_exit == 2'b00, "nobody has exited yet");
@@ -116,15 +132,23 @@ module mmio_tb;
         access(3'd6, 0, 0, 0); check(got == 0, "address 6 reads 0");
         access(3'd7, 0, 0, 0); check(got == 0, "address 7 reads 0");
 
-        // Either core may write CONTROL, but only the other core's HOLD bit.
+        // Either core may claim RX and hold only the other core. The claimer
+        // owns CONTROL until it releases RX.
         access(3'd7, 1, 7, 1);
         check(rx_claim && core_hold == 2'b01, "core 1 claims RX and holds only core 0");
-        access(3'd7, 0, 0, 0); check(got == 3, "control reads back core 1's write");
+        access(3'd7, 0, 0, 0); check(got == 8'h13, "control reads back core 1's write and ownership");
         access(3'd7, 1, 1, 1);
         check(rx_claim && core_hold == 2'b00, "core 1 releases core 0");
-        access(3'd7, 1, 7, 0);
-        check(rx_claim && core_hold == 2'b10, "core 0 claims RX and holds only core 1");
-        access(3'd7, 0, 0, 0); check(got == 5, "control reads back core 0's write");
+        access(3'd7, 1, 0, 1); check(!rx_claim, "owner releases RX");
+        access(3'd7, 0, 0, 0); check(got == 0, "owner reads 0 while unclaimed");
+        access(3'd7, 1, 1, 0);
+        check(rx_claim && core_hold == 2'b00, "core 0 claims RX");
+        access(3'd7, 1, 2, 1); check(core_hold == 2'b00, "non-owner cannot hold the owner");
+        access(3'd7, 1, 0, 1); check(rx_claim, "non-owner cannot release RX");
+        access(3'd7, 1, 7, 1); check(rx_claim && core_hold == 2'b00, "non-owner write ignored");
+        access(3'd7, 1, 5, 0);
+        check(rx_claim && core_hold == 2'b10, "owner holds only core 1");
+        access(3'd7, 0, 0, 1); check(got == 5, "control reads back core 0's write and ownership");
         for (int i = 0; i < 17; i++) begin
             rx_data = 8'(i + 128); rx_valid = 1;
             @(negedge clk);
@@ -143,6 +167,8 @@ module mmio_tb;
         access(3'd7, 1, 1, 0);
         check(rx_claim && core_hold == 2'b00, "core 1 released without releasing RX");
         access(A_STATUS, 0, 0, 0); check(got == 4, "control write without OVF_CLR keeps overflow");
+        access(3'd7, 1, 9, 1);
+        access(A_STATUS, 0, 0, 0); check(got == 4, "non-owner OVF_CLR is ignored");
         access(3'd7, 1, 9, 0);
         access(A_STATUS, 0, 0, 0); check(got == 0, "OVF_CLR clears overflow");
         access(3'd7, 0, 0, 0); check(got == 1, "OVF_CLR reads 0, RX stays claimed");
@@ -156,6 +182,8 @@ module mmio_tb;
         check(!rx_claim && core_hold == 2'b00, "reload releases RX and both holds");
         core_run = 1;
         access(A_LOCK, 0, 0, 0); check(got == 0, "lock free after the reload");
+        access(3'd7, 1, 1, 1); access(3'd7, 0, 0, 0);
+        check(got == 8'h11, "after a reload either core may claim RX");
 
         report;
     end
