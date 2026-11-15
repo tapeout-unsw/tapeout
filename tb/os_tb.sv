@@ -104,6 +104,11 @@ module os_tb #(
         // Same addresses, different instructions, with uppercase hex and tabs.
         send_text("02B00513\t3EA02E23\n");
         wait_prompt(); expect_result(43, 2);
+        // A payload that tries to hold core 0 and hand RX back to the
+        // bootloader is ignored: core 0 owns CONTROL while it claims RX.
+        send_text("000012b7 00200313 0062ae23 0002ae23\n");
+        wait_prompt(); repeat (3000) @(negedge clk);
+        if (!dut.rx_claim || dut.core_hold[0]) $fatal(1, "payload took CONTROL from the shell");
         send_text("123\n"); wait_prompt(1); expect_result(43, 2);
         send_text("02c00513 xyz\n"); wait_prompt(1); expect_result(43, 2);
         // 47 words fit, the 48th must reject the whole line.

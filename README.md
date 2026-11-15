@@ -271,17 +271,22 @@ in the simulation settings.
 | Address | Name | Read | Write |
 |---|---|---|---|
 | `0x0000 …` | RAM | 1 KiB or 2 KiB | |
-| `0x1000` | UART_DATA | 0 | send the low byte |
-| `0x1004` | UART_STATUS | bit 0 = transmitter busy | ignored |
+| `0x1000` | UART_DATA | 0 | queue the low byte for transmit |
+| `0x1004` | UART_STATUS | bit 0 = TX FIFO full (poll before writing) | ignored |
 | `0x1008` | LOCK | returns the lock bit, then sets it | clears it |
 | `0x100C` | CORE_ID | 0 or 1 | ignored |
 | `0x1010` | EXIT | bits 1:0 | sets this core's exit bit |
 | `0x1014` | LOCK_PEEK | the lock bit, no side effect | ignored |
 | `0x1018` | UART_RX | pop one received byte, zero if empty | ignored |
-| `0x101C` | CONTROL | bit 0 RX claim, bits 2:1 core 1/core 0 held | either core: RX claim, hold the other core, bit 3 clears RX overflow |
+| `0x101C` | CONTROL | bit 0 RX claim, bits 2:1 core 1/core 0 held, bit 4 RX owner | RX claim, hold the other core, bit 3 clears RX overflow; only the RX owner while claimed |
 
-UART_STATUS also reports RX available in bit 1 and sticky RX overflow in bit 2.
-The RX FIFO holds 16 bytes and receives only while CONTROL bit 0 is set.
+UART_STATUS also reports RX available in bit 1, sticky RX overflow in bit 2,
+and TX active (bytes queued or still shifting out) in bit 3. Writes go through
+a two-entry TX FIFO. Bit 0 stays set until both entries are free, so two cores
+that each poll it before writing never lose a byte. The RX FIFO holds 16 bytes
+and receives only while CONTROL bit 0 is set. The core that sets CONTROL bit 0
+owns CONTROL: until it clears bit 0, the other core's CONTROL writes are
+ignored.
 
 The `done` output goes high once both cores have written EXIT.
 
@@ -382,16 +387,19 @@ two exit bits; both clear while the cores are held in reset (`core_run` low).
 
 | `m_addr` | Address | Name | Read | Write |
 |---|---|---|---|---|
-| 0 | `0x1000` | UART_DATA | 0 | `tx_start` pulse, `tx_data = m_wdata` |
-| 1 | `0x1004` | UART_STATUS | bit 0 = `tx_busy` | ignored |
+| 0 | `0x1000` | UART_DATA | 0 | push `m_wdata` into the TX FIFO (dropped if full) |
+| 1 | `0x1004` | UART_STATUS | `{tx_active, rx_overflow, rx_ready, tx_full}` | ignored |
 | 2 | `0x1008` | LOCK | lock bit, then sets it (test-and-set) | clears the lock |
 | 3 | `0x100C` | CORE_ID | which core made the access (`m_core`) | ignored |
 | 4 | `0x1010` | EXIT | `exit[1:0]` | `exit[m_core] = 1` |
 | 5 | `0x1014` | LOCK_PEEK | lock bit, no side effect | ignored |
 | 6 | `0x1018` | UART_RX | pop one RX byte | ignored |
-| 7 | `0x101C` | CONTROL | `{core_hold, rx_claim}` | `rx_claim`, the other core's `core_hold` bit, bit 3 clears overflow |
+| 7 | `0x101C` | CONTROL | `{rx_owner, 0, core_hold, rx_claim}` | `rx_claim`, the other core's `core_hold` bit, bit 3 clears overflow; ignored from the non-owner while claimed |
 
-`done = exit[0] & exit[1]`.
+`done = exit[0] & exit[1]`. The TX FIFO pops into `uart_tx` whenever
+`tx_busy` is low. `tx_full` is `tx_count != 0`, so it clears only with both
+slots free. It is reset only by `rst`, so output queued before a reload still
+goes out.
 
 ### UART
 

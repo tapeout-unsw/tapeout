@@ -12,13 +12,14 @@
 //
 // Address map (13-bit bus address, b_addr[12] selects MMIO)
 //   0x0000              RAM
-//   0x1000              UART_DATA    write: transmit the low byte
-//   0x1004              UART_STATUS  read: bit 0 = transmitter busy
+//   0x1000              UART_DATA    write: queue the low byte (2-entry TX FIFO)
+//   0x1004              UART_STATUS  read: bit 0 TX full, 1 RX ready, 2 RX overflow, 3 TX active
 //   0x1008              LOCK         read: old value, then set; write: clear
 //   0x100C              CORE_ID      read: 0 or 1
 //   0x1010              EXIT         write: set this core's exit flag
 //   0x1018              UART_RX      read: pop received byte
-//   0x101C              CONTROL      bit 0 RX claim, bits 2:1 hold core 1:0, bit 3 clear overflow
+//   0x101C              CONTROL      bit 0 RX claim, bits 2:1 hold core 1:0, bit 3 clear overflow,
+//                                    bit 4 RX owner; only the owner may write while claimed
 //
 // Bus requesters, by b_src index
 //   0 bootloader, 1 core 0 data, 2 core 1 data, 3 core 0 I-cache, 4 core 1 I-cache
