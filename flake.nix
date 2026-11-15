@@ -25,7 +25,7 @@
           ];
         in {
           default = pkgs.mkShell {
-            packages = ciTools ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.gtkwave ];
+            packages = ciTools ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.gtkwave ];
           };
 
           ci = pkgs.mkShell { packages = ciTools; };
