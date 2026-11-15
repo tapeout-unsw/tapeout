@@ -33,6 +33,7 @@ module dcache #(
     input  logic [12:0] d_addr,
     input  logic [31:0] d_wdata,
     input  logic [3:0]  d_wstrb,
+    input logic         d_atomic,
     output logic        d_gnt,
     output logic [31:0] d_rdata,
 
@@ -77,7 +78,7 @@ module dcache #(
 
     dcache_storage u_storage (
         .clk              (clk),
-        .reset            (rst | flush | off),
+        .reset            (rst | flush | off | d_atomic),
         .index            (storage_index),
         .snoop_index      (snoop_index),
 
@@ -118,7 +119,7 @@ module dcache #(
         .flush      (flush),
         .dcache_off (off),
         .d_req      (d_req),
-        .d_mmio     (d_addr[12]),
+        .d_mmio     (d_addr[12] | d_atomic),
         .d_store    (|d_wstrb),
         .d_gnt      (d_gnt),
         .cache_hit  (cache_hit),

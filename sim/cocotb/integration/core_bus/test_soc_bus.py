@@ -40,6 +40,7 @@ SOC_NAMES = {
     "arb_boot_wstrb": "boot_wstrb",
     "retire0": "c0_retire", "retire_pc0": "c0_retire_pc",
     "retire1": "c1_retire", "retire_pc1": "c1_retire_pc",
+    "d0_atomic": "c0_d_atomic", "d1_atomic": "c1_d_atomic",
 }
 
 
@@ -114,7 +115,7 @@ async def b7_soc_top_end_to_end(dut):
 # --------------------------------------------------------------------------
 # pytest entry point (picked up by `make test-cocotb`)
 # --------------------------------------------------------------------------
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "common"))   # sim/cocotb/common
 
 SOC_SOURCES = [
     "rtl/core/alu.sv",
@@ -123,6 +124,7 @@ SOC_SOURCES = [
     "rtl/core/mem_access.sv",
     "rtl/core/register_file.sv",
     "rtl/core/core.sv",
+    "rtl/core/amoswap.sv",
     "rtl/cache/icache_storage.sv",
     "rtl/cache/icache_lru.sv",
     "rtl/cache/icache_FSM.sv",

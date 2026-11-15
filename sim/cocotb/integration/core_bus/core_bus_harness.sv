@@ -80,7 +80,8 @@ module core_bus_harness #(
         .rx_data(rx_data), .rx_valid(rx_valid),
         .rx_claim(1'b0),
         .boot_req(bl_req), .boot_addr(bl_addr), .boot_wdata(bl_wdata),
-        .core_run(core_run), .loading(bl_loading)
+        .core_run(core_run), .loading(bl_loading),
+        .chicken(), .amo_off()
     );
 
     // what the arbiter actually sees (the test's monitor reads these)
@@ -121,6 +122,7 @@ module core_bus_harness #(
     logic [12:0] d0_addr, d1_addr;
     logic [31:0] d0_wdata, d1_wdata;
     logic [3:0]  d0_wstrb, d1_wstrb;
+    logic        d0_atomic, d1_atomic;
     logic [31:0] bus_rdata;
 
     core #(.NREGS(16)) u_core0 (
@@ -128,7 +130,7 @@ module core_bus_harness #(
         .i_req(i_req0), .i_addr(i_addr0), .i_valid(i_valid0), .i_rdata(i_rdata0),
         .d_req(d0_req), .d_addr(d0_addr), .d_wdata(d0_wdata), .d_wstrb(d0_wstrb),
         .d_gnt(d0_gnt), .d_rdata(bus_rdata),
-        .retire(retire0), .retire_pc(retire_pc0)
+        .retire(retire0), .retire_pc(retire_pc0), .d_atomic(d0_atomic), .amo_off(1'b0)
     );
 
     core #(.NREGS(16)) u_core1 (
@@ -136,7 +138,7 @@ module core_bus_harness #(
         .i_req(i_req1), .i_addr(i_addr1), .i_valid(i_valid1), .i_rdata(i_rdata1),
         .d_req(d1_req), .d_addr(d1_addr), .d_wdata(d1_wdata), .d_wstrb(d1_wstrb),
         .d_gnt(d1_gnt), .d_rdata(bus_rdata),
-        .retire(retire1), .retire_pc(retire_pc1)
+        .retire(retire1), .retire_pc(retire_pc1), .d_atomic(d1_atomic), .amo_off(1'b0)
     );
 
     // ---------------- arbiter ----------------
@@ -154,7 +156,8 @@ module core_bus_harness #(
         .d1_req(d1_req), .d1_addr(d1_addr), .d1_wdata(d1_wdata), .d1_wstrb(d1_wstrb), .d1_gnt(d1_gnt),
         .ic0_req(ic0_req), .ic0_addr(ic0_addr), .ic0_wdata(32'd0), .ic0_wstrb(4'd0), .ic0_gnt(ic0_gnt),
         .ic1_req(ic1_req), .ic1_addr(ic1_addr), .ic1_wdata(32'd0), .ic1_wstrb(4'd0), .ic1_gnt(ic1_gnt),
-        .b_valid(b_valid), .b_addr(b_addr), .b_wdata(b_wdata), .b_wstrb(b_wstrb), .b_src(b_src)
+        .b_valid(b_valid), .b_addr(b_addr), .b_wdata(b_wdata), .b_wstrb(b_wstrb), .b_src(b_src),
+        .d0_atomic(d0_atomic), .d1_atomic(d1_atomic)
     );
 
     // ---------------- address decode ----------------

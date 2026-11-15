@@ -60,7 +60,7 @@ module soc #(
     logic [31:0] boot_waddr, boot_wdata;
 
     bootloader u_boot (
-        .clk(clk), .rst(rst), .chicken(),
+        .clk(clk), .rst(rst), .chicken(), .amo_off(),
         .rx_data(rx_data), .rx_valid(rx_valid),
         .rx_claim(1'b0),
         .boot_req(boot_we), .boot_addr(boot_addr), .boot_wdata(boot_wdata),
@@ -82,7 +82,8 @@ module soc #(
         .i_req(i_req), .i_addr(i_addr), .i_valid(i_valid), .i_rdata(mem_rdata),
         .d_req(d_req), .d_addr(d_addr), .d_wdata(d_wdata), .d_wstrb(d_wstrb),
         .d_gnt(d_gnt), .d_rdata(mem_rdata),
-        .retire(retire), .retire_pc(retire_pc)
+        .retire(retire), .retire_pc(retire_pc),
+        .d_atomic(), .amo_off(1'b0)                      // one core, no arbiter: nothing to hold the bus against
     );
 
     // Fetch: issue the read once, return the word the next cycle.

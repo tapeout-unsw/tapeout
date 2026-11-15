@@ -76,7 +76,8 @@ module dual_core_icache_harness (
         .d_rdata(d0_rdata),
 
         .retire(retire0),
-        .retire_pc(retire_pc0)
+        .retire_pc(retire_pc0),
+        .amo_off(1'b0)
     );
 
     icache u_icache0 (
@@ -116,7 +117,8 @@ module dual_core_icache_harness (
         .d_rdata(d1_rdata),
 
         .retire(retire1),
-        .retire_pc(retire_pc1)
+        .retire_pc(retire_pc1),
+        .amo_off(1'b0)
     );
 
     icache u_icache1 (
