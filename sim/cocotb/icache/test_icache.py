@@ -82,6 +82,7 @@ class Bench:
         self.waiting = False    # last cycle had ic_req without ic_gnt
         self.last_ic_addr = 0
         self.fetches = self.hits = 0
+        self.off = 0            # chicken bit: storage held in reset, every fetch goes to the bus
 
     async def start(self):
         cocotb.start_soon(Clock(self.dut.clk, CLK_NS, unit="ns").start())
@@ -98,6 +99,9 @@ class Bench:
         await FallingEdge(dut.clk)
         dut.rst.value = rst
         dut.flush.value = flush
+        dut.off.value = self.off
+        if self.off:
+            self.model.flush()  # nothing can stay cached while off is high
         dut.i_req.value = i_req
         dut.i_addr.value = i_addr
         # bus_rdata only carries data the cycle after a grant. Drive noise at
@@ -181,6 +185,13 @@ class Bench:
         for _ in range(cycles):
             await self.step(flush=1)
         self.model.flush()
+
+    def set_off(self, value):
+        """Set the chicken bit from the next cycle. Turning it on empties the
+        cache (its storage is held in reset), so the model empties too."""
+        self.off = value
+        if value:
+            self.model.flush()
 
 
 async def new_bench(dut):
@@ -268,6 +279,26 @@ async def flush_beats_fill_in_same_cycle(dut):
     tb.model.flush()
     assert not await tb.fetch(new), "the line filled during flush survived it"
     assert not await tb.fetch(old), "a line cached before the flush survived it"
+
+
+@cocotb.test()
+async def off_bit_bypasses_the_cache(dut):
+    """The chicken bit (off): while it is high every fetch goes to the bus,
+    even one repeated straight away, and nothing is reported as a hit. Turning
+    it on clears the cache, so after it goes low again the same words miss
+    once and then hit. (IC-1 in the coverage report.)"""
+    tb = await new_bench(dut)
+    words = [0x100 + 4 * i for i in range(8)]
+    assert [await tb.fetch(a) for a in words] == [False] * 8
+    assert [await tb.fetch(a) for a in words] == [True] * 8
+
+    tb.set_off(1)                                   # switched on mid-stream
+    assert [await tb.fetch(a) for a in words + words] == [False] * 16
+    await tb.idle(2)
+
+    tb.set_off(0)
+    assert [await tb.fetch(a) for a in words] == [False] * 8, "lines survived the off bit"
+    assert [await tb.fetch(a) for a in words] == [True] * 8
 
 
 @cocotb.test()

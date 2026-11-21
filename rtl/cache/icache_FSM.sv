@@ -73,7 +73,9 @@ module icache_FSM (
                     next_state = IDLE;
                 end
 
-                default: next_state = IDLE;
+                /* verilator coverage_off */
+                default: next_state = IDLE;   // unreachable: the 4th encoding of the 2-bit state never occurs from reset; kept as recovery
+                /* verilator coverage_on */
             endcase
         end
     end
@@ -97,12 +99,14 @@ module icache_FSM (
 
                 FILL: fill = 1'b1;
 
-                default: begin
+                /* verilator coverage_off */
+                default: begin              // unreachable: the 4th encoding of the 2-bit state never occurs from reset; kept as recovery
                     serve_hit  = 1'b0;
                     miss_start = 1'b0;
                     ic_req     = 1'b0;
                     fill       = 1'b0;
                 end
+                /* verilator coverage_on */
             endcase
         end
     end
