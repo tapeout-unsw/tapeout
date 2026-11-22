@@ -31,10 +31,15 @@ UNIT_GATED := arbiter mmio addr_decode
 # virtualenv: python -m pip install -r sim/requirements.txt. As with
 # UNIT_GATED, add a block here once its RTL passes its tests; `make ci` and CI
 # then require it to stay green.
-# Blocks: sram_mem icache dcache dcache_fsm dcache_snoop
-COCOTB_GATED := sram_mem icache dcache dcache_fsm dcache_snoop
+# Blocks: sram_mem icache dcache dcache_fsm dcache_snoop alu imm_gen decoder
+#         register_file amoswap core uart_rx uart_tx bootloader
+# integration/atomics is the only test of the arbiter's atomic hold on the
+# real bus, so it is gated too.
+COCOTB_GATED := sram_mem icache dcache dcache_fsm dcache_snoop \
+                alu imm_gen decoder register_file amoswap core \
+                uart_rx uart_tx bootloader integration/atomics
 
-.PHONY: help env lint synth synth-full check-top test test-core test-soc test-soc-top test-os test-all \
+.PHONY: help env lint synth synth-full check-top test test-core test-soc test-soc-top test-os test-all test-chicken \
         test-unit test-unit-gated test-cocotb test-cocotb-gated waves ci clean
 
 help:
@@ -49,9 +54,11 @@ help:
 	@echo "make test-soc-top         dual-core soc_top tests (NREGS=16|32, DCACHE=0|1, TEST=all|<name>)"
 	@echo "make test-os              resident UART shell integration test (NREGS=16|32, DCACHE=0|1)"
 	@echo "make test-all             core, SoC and soc_top tests at both register counts, soc_top with and without D-cache"
+	@echo "make test-chicken         soc_top tests with each chicken bit, all of them, and amo_off set (NREGS=16|32)"
 	@echo "make test-unit            block unit testbenches (BLOCK=all|arbiter|addr_decode|icache|sram_mem|mmio)"
 	@echo "make test-unit-gated      only the unit testbenches listed in UNIT_GATED"
-	@echo "make test-cocotb          cocotb block tests (BLOCK=all|icache|dcache|dcache_fsm|dcache_snoop|sram_mem; SEED=<n>, WAVES=1)"
+	@echo "make test-cocotb          cocotb block tests (BLOCK=all|icache|dcache|dcache_fsm|dcache_snoop|sram_mem|alu|imm_gen|"
+	@echo "                          decoder|register_file|amoswap|core|uart_rx|uart_tx|bootloader; SEED=<n>, WAVES=1)"
 	@echo "make test-cocotb-gated    only the cocotb blocks listed in COCOTB_GATED"
 	@echo "make test-cocotb          cocotb unit tests (sim/cocotb/sram_mem)"
 	@echo "make waves TEST=<name>    run one core test and dump a VCD"
@@ -116,6 +123,17 @@ test-all:
 	  $(MAKE) --no-print-directory test-soc  NREGS=$$n TEST=all || exit 1; \
 	  $(MAKE) --no-print-directory test-soc-top NREGS=$$n DCACHE=0 TEST=all || exit 1; \
 	  $(MAKE) --no-print-directory test-soc-top NREGS=$$n DCACHE=1 TEST=all || exit 1; \
+	done
+
+# CB-1 / AMO-1: every soc_top program must give the same result with any cache
+# turned off by its chicken bit, and with amoswap turned off (no program uses
+# amoswap; the core unit test checks what amoswap does with amo_off = 1).
+CHICKEN_RUNS := "+CHICKEN=8" "+CHICKEN=4" "+CHICKEN=2" "+CHICKEN=1" "+CHICKEN=f" \
+                "+AMO_OFF=1" "+CHICKEN=f +AMO_OFF=1"
+
+test-chicken:
+	@for a in $(CHICKEN_RUNS); do \
+	  SIM_ARGS="$$a" SIM_TOP=soc_top_tb DCACHE=1 ./sim/run_verilator.sh $(NREGS) all || exit 1; \
 	done
 
 test-unit:

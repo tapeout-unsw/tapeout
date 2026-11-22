@@ -2,6 +2,7 @@
 # Core: ./sim/run_verilator.sh [16|32] [test|all]
 # SoC:  ./sim/run_soc.sh [test|sample|all] [16|32]
 # Dual-core: SIM_TOP=soc_top_tb [DCACHE=0|1] ./sim/run_verilator.sh [16|32] [test|all]
+# SIM_ARGS="+CHICKEN=f +AMO_OFF=1" passes extra plusargs to every test.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -64,6 +65,7 @@ for h in "${TESTS[@]}"; do
     args=("+HEX=$h")
     if [[ -f ${h%.hex}.args ]]; then read -ra extra <"${h%.hex}.args"; args+=("${extra[@]}"); fi
     if [[ ${TRACE:-0} == 1 ]]; then args+=("+TRACE=$BUILD/$name.vcd"); fi
+    if [[ -n ${SIM_ARGS:-} ]]; then read -ra sim_extra <<<"$SIM_ARGS"; args+=("${sim_extra[@]}"); fi
     status=0
     timeout "${SIM_TIMEOUT:-180}" "$BUILD/simulator" "${args[@]}" >"$OUTPUT/test.log" 2>&1 || status=$?
     if (( status == 0 )) && grep -q '^PASS ' "$OUTPUT/test.log" \
@@ -75,5 +77,5 @@ for h in "${TESTS[@]}"; do
         fail=$((fail+1))
     fi
 done
-echo "$TOP NREGS=$NREGS${PARAMS[1]:+ DCACHE=$DCACHE} : $pass passed, $fail failed"
+echo "$TOP NREGS=$NREGS${PARAMS[1]:+ DCACHE=$DCACHE}${SIM_ARGS:+ $SIM_ARGS} : $pass passed, $fail failed"
 (( fail == 0 ))

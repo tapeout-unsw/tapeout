@@ -99,7 +99,7 @@ module soc_top #(
         .d_req(c0_d_req), .d_addr(c0_d_addr), .d_wdata(c0_d_wdata), .d_wstrb(c0_d_wstrb),
         .d_gnt(c0_d_gnt), .d_rdata(c0_d_rdata),
         .retire(c0_retire), .retire_pc(c0_retire_pc), .d_atomic(c0_d_atomic),
-        .amo_off(1'b0) // this can use amo_off from bootloader once we merge
+        .amo_off(amo_off)       // amoswap chicken bit, header bit 27 from the bootloader
     );
 
     logic        ic0_req, ic0_gnt;
@@ -133,7 +133,7 @@ module soc_top #(
         .d_req(c1_d_req), .d_addr(c1_d_addr), .d_wdata(c1_d_wdata), .d_wstrb(c1_d_wstrb),
         .d_gnt(c1_d_gnt), .d_rdata(c1_d_rdata),
         .retire(c1_retire), .retire_pc(c1_retire_pc), .d_atomic(c1_d_atomic),
-        .amo_off(1'b0) // this can use amo_off from bootloader once we merge
+        .amo_off(amo_off)       // amoswap chicken bit, header bit 27 from the bootloader
     );
 
     logic        ic1_req, ic1_gnt;

@@ -92,7 +92,9 @@ module bootloader (
                             chicken <= full_word[31:28];
                             amo_off <= full_word[27];
                         end
-                        default: ;
+                        /* verilator coverage_off */
+                        default: ;         // unreachable: state's 4th encoding is never written
+                        /* verilator coverage_on */
                     endcase
                 end else
                     byte_idx <= byte_idx + 1;

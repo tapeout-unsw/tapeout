@@ -61,7 +61,9 @@ module decoder(
                  3'b010: alu_op = 4'd8; //slt
                  3'b011: alu_op = 4'd9; //sltu
 
-                 default: alu_op = 4'd0;
+                 /* verilator coverage_off */
+                 default: alu_op = 4'd0;   // unreachable: all 8 funct3 values are decoded
+                 /* verilator coverage_on */
             endcase
             reg_write = 1'b1;
         end
@@ -80,7 +82,9 @@ module decoder(
                  3'b010: alu_op = 4'd8; //slt
                  3'b011: alu_op = 4'd9; //sltu
 
-                 default: alu_op = 4'd0;
+                 /* verilator coverage_off */
+                 default: alu_op = 4'd0;   // unreachable: all 8 funct3 values are decoded
+                 /* verilator coverage_on */
             endcase
         end
 

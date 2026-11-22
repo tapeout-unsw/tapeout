@@ -14,7 +14,7 @@ module arbiter_tb;
     logic        d1_req = 0;    logic [12:0] d1_addr = 0;   logic [31:0] d1_wdata = 0;   logic [3:0] d1_wstrb = 0;   logic d1_gnt;
     logic        ic0_req = 0;   logic [12:0] ic0_addr = 0;  logic [31:0] ic0_wdata = 0;  logic [3:0] ic0_wstrb = 0;  logic ic0_gnt;
     logic        ic1_req = 0;   logic [12:0] ic1_addr = 0;  logic [31:0] ic1_wdata = 0;  logic [3:0] ic1_wstrb = 0;  logic ic1_gnt;
-    logic        d0_atomic = 0, d1_atomic = 0;   // atomics are not exercised here
+    logic        d0_atomic = 0, d1_atomic = 0;   // atomics: sections 6 and 7
     logic        b_valid;
     logic [12:0] b_addr;
     logic [31:0] b_wdata;
@@ -79,6 +79,15 @@ module arbiter_tb;
 
     integer seed, waited [1:4], granted_k, grants_seen [1:4], cycles;
     logic   was_granted [1:4];
+
+    // atomics: the hold model and each data port's atomic sequence
+    // (amo_st 0 = none, 1 = atomic read pending, 2 = atomic write due)
+    integer other, amo_st [1:4], m_owner, n_holds;
+    logic   m_busy;
+
+    task automatic set_atomic(input integer k, input logic v);
+        if (k == 1) d0_atomic = v; else if (k == 2) d1_atomic = v;
+    endtask
 
     initial begin
         if (!$value$plusargs("SEED=%d", seed)) seed = 1;
@@ -166,6 +175,132 @@ module arbiter_tb;
             // requester does after seeing its grant at the clock edge
             for (int k = 1; k <= 4; k++) if (was_granted[k]) r_req[k] = 0;
         end
+        clear_all();
+        @(negedge clk);
+
+        // 6. atomics (ARB-4): a granted atomic read by core k starts a hold;
+        //    while it lasts only core k can win; core k's next write ends it.
+        for (int owner = 1; owner <= 2; owner++) begin
+            other = 3 - owner;
+            // the atomic read, alone so it wins whatever the pointer
+            r_req[owner] = 1; r_wstrb[owner] = 0; r_addr[owner] = 13'h0300;
+            set_atomic(owner, 1);
+            #1;
+            check(r_gnt[owner] && n_grants() == 1, "atomic read granted");
+            @(negedge clk);
+            // the owner idles while holding; everyone else asks, including an
+            // atomic read by the other core and the bootloader
+            r_req[owner] = 0;
+            r_req[other] = 1; r_wstrb[other] = 0; set_atomic(other, 1);
+            r_req[3] = 1; r_req[4] = 1; boot_req = 1;
+            for (int c = 0; c < 4; c++) begin
+                #1;
+                check(!b_valid && n_grants() == 0, "hold: owner idle, nobody else granted");
+                @(negedge clk);
+            end
+            // the owner reads again during the hold: granted, hold continues
+            r_req[owner] = 1; r_wstrb[owner] = 0; r_addr[owner] = 13'h0304;
+            #1;
+            check(r_gnt[owner] && n_grants() == 1, "hold: owner's read granted");
+            check_forward(owner, "hold: owner's read forwarded");
+            @(negedge clk);
+            r_req[owner] = 0;
+            #1;
+            check(!b_valid && n_grants() == 0, "hold survives a read by the owner");
+            @(negedge clk);
+            // the owner's write ends the hold
+            r_req[owner] = 1; r_wstrb[owner] = 4'b1111; r_wdata[owner] = 32'hA70A_0000 + owner;
+            #1;
+            check(r_gnt[owner] && n_grants() == 1, "hold: owner's write granted");
+            check_forward(owner, "hold: owner's write forwarded");
+            @(negedge clk);
+            r_req[owner] = 0; set_atomic(owner, 0);
+            #1;
+            check(b_valid && n_grants() == 1 && !r_gnt[owner], "hold released after owner's write");
+            set_atomic(other, 0);
+            clear_all();
+            @(negedge clk);
+        end
+
+        // 6b. accesses that must NOT start a hold
+        //   - a plain read by core 0 with d0_atomic low
+        //   - a read by core 1 while only d0_atomic is high (wrong core's flag)
+        //   - a write by core 0 with d0_atomic high
+        for (int t = 0; t < 4; t++) begin
+            clear_all();
+            case (t)
+                0: begin r_req[1] = 1; set_atomic(1, 0); end
+                1: begin r_req[2] = 1; set_atomic(1, 1); set_atomic(2, 0); end
+                2: begin r_req[1] = 1; r_wstrb[1] = 4'b0011; set_atomic(1, 1); end
+                3: begin r_req[2] = 1; r_wstrb[2] = 4'b1000; set_atomic(2, 1); end
+            endcase
+            #1;
+            check(n_grants() == 1, "lone data access granted");
+            @(negedge clk);
+            clear_all(); set_atomic(1, 0); set_atomic(2, 0);
+            r_req[3] = 1;
+            #1;
+            check(ic0_gnt, "no hold after a non-atomic or write access");
+            @(negedge clk);
+        end
+        clear_all();
+
+        // 7. random traffic with atomic read/write pairs on both data ports,
+        //    checked against a model of the hold
+        m_busy = 0; m_owner = 0;
+        for (int k = 1; k <= 4; k++) begin waited[k] = 0; amo_st[k] = 0; end
+        n_holds = 0;
+        for (cycles = 0; cycles < 20000; cycles++) begin
+            for (int k = 1; k <= 4; k++) begin
+                if (!r_req[k] && amo_st[k] == 0 && ($urandom % 3 == 0)) begin
+                    r_req[k] = 1; r_addr[k] = 13'($urandom); r_wdata[k] = $urandom;
+                    waited[k] = 0;
+                    if (k <= 2 && ($urandom % 4 == 0)) begin
+                        amo_st[k] = 1; r_wstrb[k] = 0; set_atomic(k, 1);      // atomic read
+                    end else
+                        r_wstrb[k] = 4'($urandom);
+                end else if (!r_req[k] && amo_st[k] == 2 && ($urandom % 2 == 0)) begin
+                    r_req[k] = 1; r_wstrb[k] = 4'b1111; r_wdata[k] = $urandom;  // atomic write
+                end
+            end
+            #1;
+            check(n_grants() <= 1, "atomics: never more than one grant");
+            check(b_valid == (n_grants() == 1), "atomics: b_valid matches a grant");
+            for (int k = 1; k <= 4; k++) begin
+                was_granted[k] = r_gnt[k];
+                if (r_gnt[k]) begin
+                    check(r_req[k], "atomics: grant only to a requester");
+                    check_forward(k, "atomics: granted bundle forwarded intact");
+                    if (m_busy) check(k == m_owner, "atomics: only the owner wins during a hold");
+                end
+                if (m_busy) waited[k] = 0;
+                else if (r_req[k] && !r_gnt[k]) begin
+                    waited[k]++;
+                    check(waited[k] <= 3, "atomics: no requester waits more than 3 cycles outside a hold");
+                end
+            end
+            if (!m_busy)
+                check(n_grants() == 1 || !(r_req[1] || r_req[2] || r_req[3] || r_req[4]),
+                      "atomics: someone is granted whenever anyone asks outside a hold");
+            else
+                check(n_grants() == (r_req[m_owner] ? 1 : 0), "atomics: owner granted whenever it asks");
+            // model update at the edge
+            if (m_busy) begin
+                if (r_gnt[m_owner] && r_wstrb[m_owner] != 0) m_busy = 0;
+            end else
+                for (int k = 1; k <= 2; k++)
+                    if (r_gnt[k] && r_wstrb[k] == 0 && (k == 1 ? d0_atomic : d1_atomic)) begin
+                        m_busy = 1; m_owner = k; n_holds++;
+                    end
+            @(negedge clk);
+            for (int k = 1; k <= 4; k++) if (was_granted[k]) begin
+                r_req[k] = 0;
+                if (amo_st[k] == 1) amo_st[k] = 2;
+                else if (amo_st[k] == 2) begin amo_st[k] = 0; set_atomic(k, 0); end
+            end
+        end
+        check(n_holds > 100, "atomics: random test produced many holds");
+        $display("arbiter_tb: %0d atomic holds in the random test", n_holds);
 
         report;
     end

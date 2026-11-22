@@ -133,6 +133,9 @@ module addr_decode_tb;
         end
 
         // ---- T8: read data comes from the previous cycle's target --------
+        // T1-T7 advance time by #1 per drive() and cross clock edges, so align
+        // to a falling edge first; without this T8 only passed on Icarus by luck.
+        @(negedge clk);
         drive(1'b1, 13'h0010, 32'h0, 4'b0000, 3'd1);   // RAM access
         @(negedge clk);                                // its data cycle
         idle;

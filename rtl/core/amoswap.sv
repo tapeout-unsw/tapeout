@@ -69,7 +69,9 @@ module amoswap (
                         state <= IDLE;
                 end
 
-                default: state <= IDLE;
+                /* verilator coverage_off */
+                default: state <= IDLE;    // unreachable: all 4 encodings of the 2-bit state are used
+                /* verilator coverage_on */
             endcase
         end
     end

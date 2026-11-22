@@ -13,6 +13,10 @@
 // +DUMP_REGS=0 disables final register dumps; +TRACE_REGS=1 dumps each retire.
 // +PRINT_UART=0 disables printing received UART bytes.
 // +REG1=0:x5=ff +REG2=1:x5=ff00 checks final registers, values in hex.
+// +CHICKEN=<hex 0..f> and +AMO_OFF=<0|1> set the header's chicken bits
+// (31:28, 1 = off: [3] ic0 [2] ic1 [1] dc0 [0] dc1) and amoswap-off bit (27)
+// for every image; after each load the bench checks they reached soc_top's
+// caches and both cores.
 //
 module soc_top_tb;
 
@@ -183,6 +187,9 @@ module soc_top_tb;
     reg [31:0] golden    [0:WORDS-1];
     reg        golden_ok [0:WORDS-1];
     integer    nwords;
+    logic [31:0] header;
+    logic [3:0]  chicken_req = 4'd0;   // +CHICKEN
+    logic        amo_off_req = 1'b0;   // +AMO_OFF
 
     task automatic read_image(input string file);
         integer i, fd;
@@ -202,10 +209,12 @@ module soc_top_tb;
     task automatic load_image;
         integer i;
         begin
-            send_byte(nwords[7:0]);
-            send_byte(nwords[15:8]);
-            send_byte(nwords[23:16]);
-            send_byte(nwords[31:24]);
+            if (nwords >= (1 << 27)) error("image too large for the 27-bit word count");
+            header = {chicken_req, amo_off_req, 27'(nwords)};
+            send_byte(header[7:0]);
+            send_byte(header[15:8]);
+            send_byte(header[23:16]);
+            send_byte(header[31:24]);
             if (core_run) error("cores still running after the word count");
             for (i = 0; i < WORDS; i = i + 1) begin
                 golden[i]    = img[i];
@@ -218,6 +227,13 @@ module soc_top_tb;
                 send_byte(img[i][31:24]);
             end
             if (!core_run) error("bootloader did not release the cores");
+            // the header's control bits reached their users
+            if (dut.chicken !== chicken_req) error("chicken bits not latched from the header");
+            if (dut.amo_off !== amo_off_req) error("amo_off not latched from the header");
+            if (dut.u_core0.amo_off !== amo_off_req || dut.u_core1.amo_off !== amo_off_req)
+                error("amo_off does not reach both cores");
+            if (dut.u_icache0.off !== chicken_req[3] || dut.u_icache1.off !== chicken_req[2])
+                error("I-cache chicken bits do not reach the I-caches");
         end
     endtask
 
@@ -368,6 +384,9 @@ module soc_top_tb;
         void'($value$plusargs("DUMP_REGS=%d", dump_end));
         void'($value$plusargs("PRINT_UART=%d", print_uart));
         if (cycle_limit < 1) $fatal(1, "CYCLES must be positive");
+        void'($value$plusargs("CHICKEN=%h", chicken_req));
+        void'($value$plusargs("AMO_OFF=%d", amo_off_req));
+        if (chicken_req != 0 || amo_off_req) $display("chicken=%h amo_off=%0d", chicken_req, amo_off_req);
         read_register_checks();
         if (!$value$plusargs("HEX=%s", hexfile)) hexfile = "tests/rv32e_test.hex";
         reload    = $value$plusargs("HEX2=%s", hexfile2);
