@@ -200,6 +200,27 @@ async def fill_race(dut):
 
 
 @cocotb.test()
+async def every_tag_bit_is_compared(dut):
+    """Two lines whose tags differ in one bit must never be confused, for
+    every tag bit: not by the hit compare (the second load misses and gets
+    its own word) and not by the snoop compare (a remote write to one drops
+    only that one). Run from tag 0 and from the all-ones tag, so every tag
+    bit goes 0->1 and 1->0."""
+    tb = await new_bench(dut)
+    bits = tb.raw - 5                       # tag = address bits RAW-1..5
+    for base in (0, (1 << bits) - 1):
+        for k in range(bits):
+            x, y = addr_of(k, base), addr_of(k, base ^ (1 << k))
+            await tb.step(flush=1)
+            assert not await tb.load(x)
+            assert not await tb.load(y), f"tag bit {k}: {y:#06x} hit on {x:#06x}'s line"
+            assert await tb.load(x) and await tb.load(y)
+            await tb.step(remote=(2, y, 0b1111, tb.rng.getrandbits(32)))
+            assert await tb.load(x), f"tag bit {k}: a write to {y:#06x} dropped {x:#06x}"
+            assert not await tb.load(y), f"tag bit {k}: {y:#06x} survived a remote write"
+
+
+@cocotb.test()
 async def flush_clears(dut):
     tb = await new_bench(dut)
     await tb.load(0x010)
