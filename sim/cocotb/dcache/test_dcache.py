@@ -207,6 +207,56 @@ async def flush_clears(dut):
     assert not await tb.load(0x010)
 
 
+# Way-1 tests. Victim choice (an invalid way first, then LRU) isn't visible at
+# the ports, so each test fills two tags into one set: one of them must be in
+# way 1, and both are exercised. The bench checks every load's data.
+
+@cocotb.test()
+async def load_hits_in_both_ways(dut):
+    """DC-1: with both ways of a set full, reloading either tag hits and
+    returns its own word. Then a third tag evicts the least recently used
+    line and the hits repeat, and a fourth evicts the other way."""
+    tb = await new_bench(dut)
+    a, b, c, d = (addr_of(6, t) for t in (0, 1, 2, 3))
+    assert [await tb.load(x) for x in (a, b)] == [False, False]
+    assert [await tb.load(x) for x in (b, a, b, a)] == [True] * 4
+    assert not await tb.load(c)                    # a used last, so b's way goes
+    assert [await tb.load(x) for x in (c, a, a, c)] == [True] * 4
+    assert not await tb.load(d)                    # c used last, so a's way goes
+    assert [await tb.load(x) for x in (d, c, c, d)] == [True] * 4
+
+
+@cocotb.test()
+async def remote_write_invalidates_either_way(dut):
+    """DC-2: with both ways of a set full, a remote write to one of the lines
+    drops only that line: it misses and refetches the new word, and the other
+    way still hits. Done once for each line, so both ways are invalidated."""
+    tb = await new_bench(dut)
+    a, b = addr_of(1, 0), addr_of(1, 1)
+    for victim, other in ((a, b), (b, a)):
+        await tb.load(a)
+        await tb.load(b)
+        assert await tb.load(victim) and await tb.load(other)
+        await tb.step(remote=(2, victim, 0b1111, tb.rng.getrandbits(32)))
+        assert not await tb.load(victim), f"{victim:#06x} survived a remote write"
+        assert await tb.load(other), f"{other:#06x} was dropped by a write to {victim:#06x}"
+
+
+@cocotb.test()
+async def store_hit_merges_bytes_in_either_way(dut):
+    """A store to a cached line updates only its strobed bytes, in whichever
+    way the line sits: each following load hits and must return the merged
+    word."""
+    tb = await new_bench(dut)
+    a, b = addr_of(2, 0), addr_of(2, 1)
+    await tb.load(a)
+    await tb.load(b)
+    for x in (a, b):
+        for strb in (0b0001, 0b0110, 0b1000, 0b1111):
+            await tb.store(x, tb.rng.getrandbits(32), strb)
+            assert await tb.load(x), f"{x:#06x} should still be cached after a store hit"
+
+
 @pytest.mark.parametrize("raw", [10, 11])
 def test_dcache(raw):
     sources = [

@@ -81,5 +81,7 @@ module dcache_snoop #(
     // Not used: the byte offset, and the address bits above the RAM size
     // (b_addr[12] is used, as the MMIO select).
     logic unused;
+    /* verilator coverage_off */   // lint sink: an AND with a constant 0 is never 1
     assign unused = &{1'b0, b_addr[11], b_addr[1:0], miss_addr[12:RAW], miss_addr[1:0]};
+    /* verilator coverage_on */
 endmodule

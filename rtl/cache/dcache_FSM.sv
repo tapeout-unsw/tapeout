@@ -157,7 +157,9 @@ module dcache_FSM (
 
                 PASS: resp_bus = 1'b1;
 
-                default: ;
+                /* verilator coverage_off */
+                default: ;   // unreachable: the 4th encoding of the 2-bit state never occurs from reset; kept as recovery
+                /* verilator coverage_on */
             endcase
         end
     end

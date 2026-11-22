@@ -13,6 +13,8 @@
 // +DUMP_REGS=0 disables final register dumps; +TRACE_REGS=1 dumps each retire.
 // +PRINT_UART=0 disables printing received UART bytes.
 // +REG1=0:x5=ff +REG2=1:x5=ff00 checks final registers, values in hex.
+// +CHICKEN=<hex> puts the cache chicken bits in the header's bits 31:28
+// (1 = off: 8 ic0, 4 ic1, 2 dc0, 1 dc1); default 0, all caches on.
 //
 module soc_top_tb;
 
@@ -183,6 +185,7 @@ module soc_top_tb;
     reg [31:0] golden    [0:WORDS-1];
     reg        golden_ok [0:WORDS-1];
     integer    nwords;
+    reg [3:0]  chicken_bits = 4'h0;   // header bits 31:28, from +CHICKEN
 
     task automatic read_image(input string file);
         integer i, fd;
@@ -202,10 +205,11 @@ module soc_top_tb;
     task automatic load_image;
         integer i;
         begin
+            // header: 31:28 chicken bits, 27 amo_off (0), 26:0 word count
             send_byte(nwords[7:0]);
             send_byte(nwords[15:8]);
             send_byte(nwords[23:16]);
-            send_byte(nwords[31:24]);
+            send_byte({chicken_bits, 1'b0, nwords[26:24]});
             if (core_run) error("cores still running after the word count");
             for (i = 0; i < WORDS; i = i + 1) begin
                 golden[i]    = img[i];
@@ -367,6 +371,7 @@ module soc_top_tb;
         void'($value$plusargs("TRACE_REGS=%d", trace_regs));
         void'($value$plusargs("DUMP_REGS=%d", dump_end));
         void'($value$plusargs("PRINT_UART=%d", print_uart));
+        void'($value$plusargs("CHICKEN=%h", chicken_bits));
         if (cycle_limit < 1) $fatal(1, "CYCLES must be positive");
         read_register_checks();
         if (!$value$plusargs("HEX=%s", hexfile)) hexfile = "tests/rv32e_test.hex";

@@ -2,6 +2,7 @@
 # Core: ./sim/run_verilator.sh [16|32] [test|all]
 # SoC:  ./sim/run_soc.sh [test|sample|all] [16|32]
 # Dual-core: SIM_TOP=soc_top_tb [DCACHE=0|1] ./sim/run_verilator.sh [16|32] [test|all]
+# SIM_ARGS="+..." adds plusargs to every test run, e.g. SIM_ARGS=+CHICKEN=f.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -63,6 +64,7 @@ for h in "${TESTS[@]}"; do
     name=$(basename "$h" .hex)
     args=("+HEX=$h")
     if [[ -f ${h%.hex}.args ]]; then read -ra extra <"${h%.hex}.args"; args+=("${extra[@]}"); fi
+    if [[ -n ${SIM_ARGS:-} ]]; then read -ra more <<<"$SIM_ARGS"; args+=("${more[@]}"); fi
     if [[ ${TRACE:-0} == 1 ]]; then args+=("+TRACE=$BUILD/$name.vcd"); fi
     status=0
     timeout "${SIM_TIMEOUT:-180}" "$BUILD/simulator" "${args[@]}" >"$OUTPUT/test.log" 2>&1 || status=$?

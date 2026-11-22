@@ -32,7 +32,10 @@ UNIT_GATED := arbiter mmio addr_decode
 # UNIT_GATED, add a block here once its RTL passes its tests; `make ci` and CI
 # then require it to stay green.
 # Blocks: sram_mem icache dcache dcache_fsm dcache_snoop
-COCOTB_GATED := sram_mem icache dcache dcache_fsm dcache_snoop
+# Integration: integration/<name>, e.g. the I-cache with the bus and the cores.
+COCOTB_GATED := sram_mem icache dcache dcache_fsm dcache_snoop \
+                integration/icache_bus integration/single_core_icache \
+                integration/dual_core_icache
 
 .PHONY: help env lint synth synth-full check-top test test-core test-soc test-soc-top test-os test-all \
         test-unit test-unit-gated test-cocotb test-cocotb-gated waves ci clean
@@ -46,7 +49,8 @@ help:
 	@echo "make test                 core and SoC program tests at NREGS=$(NREGS)"
 	@echo "make test-core            core tests     (NREGS=16|32, TEST=all|<name>)"
 	@echo "make test-soc             SoC boot tests (NREGS=16|32, TEST=all|sample|<name>)"
-	@echo "make test-soc-top         dual-core soc_top tests (NREGS=16|32, DCACHE=0|1, TEST=all|<name>)"
+	@echo "make test-soc-top         dual-core soc_top tests (NREGS=16|32, DCACHE=0|1, TEST=all|<name>,"
+	@echo "                          CHICKEN=<hex> cache chicken bits: 8 ic0, 4 ic1, 2 dc0, 1 dc1)"
 	@echo "make test-os              resident UART shell integration test (NREGS=16|32, DCACHE=0|1)"
 	@echo "make test-all             core, SoC and soc_top tests at both register counts, soc_top with and without D-cache"
 	@echo "make test-unit            block unit testbenches (BLOCK=all|arbiter|addr_decode|icache|sram_mem|mmio)"
@@ -106,7 +110,8 @@ test-soc:
 	@./sim/run_soc.sh $(TEST) $(NREGS)
 
 test-soc-top:
-	@SIM_TOP=soc_top_tb DCACHE=$(DCACHE) ./sim/run_verilator.sh $(NREGS) $(TEST)
+	@SIM_TOP=soc_top_tb DCACHE=$(DCACHE) SIM_ARGS="$(if $(CHICKEN),+CHICKEN=$(CHICKEN))" \
+	  ./sim/run_verilator.sh $(NREGS) $(TEST)
 
 test: test-core test-soc
 
