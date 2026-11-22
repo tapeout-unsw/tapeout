@@ -10,6 +10,7 @@ make run PROGRAMS=exit_order REGS='0:x8=1000 1:x8=1000 0:x9=0 1:x9=1 0:x10=2'
 make run PROGRAMS=mc_byte_lanes UART=P
 make run PROGRAMS=mc_cache_thrash UART=P
 make run PROGRAMS=mc_lock_stress UART=P
+make run PROGRAMS=mc_amo_lock UART=P
 make run PROGRAMS=mc_memwalk UART=P
 make run PROGRAMS=mc_uart UART=HELLOWORLDP
 make run PROGRAMS='mc_reload_a mc_reload_b' UART=AP
